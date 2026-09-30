@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+	<!-- GET TC SUB FLOW -->
+	<sub-flow name="getTcAgreementsSubFlow" doc:id="73374b75-1122-4129-b4dc-7e3b5ad80a6a">
+		<ee:transform doc:name="Entity" doc:id="2351e43a-666e-4809-bc6a-6bc74d450725">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getTcAgreements']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.comms')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="a411cf26-e2c9-4ada-9bd6-f94feed6c81b" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="cdbadf73-5f25-44a4-8c32-37bb71d4ed78" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="GetTcAgreementListReq" doc:id="00415725-c1e8-4ad2-8793-60ca4cead40a">
+			<ee:variables>
+				<ee:set-variable variableName="dynamicQuery"><![CDATA[%dw 2.0
+					import sortQuery from dwl::modules
+					output application/java
+					var query = p('db.query.select.tcAgreementList')
+					var status = if (!isEmpty(attributes.queryParams.*"status")) ( "docAg.STATUS IN ('" ++ (attributes.queryParams.*"status"  joinBy  ("','")) ++ "')" )
+					else ( "docAg.STATUS IN ('ACTIVE','INACTIVE')" )
+					var title = if (!isBlank(attributes.queryParams."messageQuery"))("AND (docAg.TITLE LIKE '%" ++ (attributes.queryParams."messageQuery")
+					++ "%' OR docAg.DOC_AGR_ID LIKE '%" ++ (attributes.queryParams."messageQuery") ++ "%')") else ''
+					var serviceType = if (!isEmpty(attributes.queryParams.*"serviceType")) ( "AND (" ++
+					((attributes.queryParams.*"serviceType" reduce ((item, acc=[]) -> acc + ("SERVICE_TYPE LIKE '%" ++ item ++ "%'"))) joinBy " OR ") ++ ")" ) else ''
+					var updatedBy = if (!isEmpty(attributes.queryParams.*"updatedBy")) ( "AND docAg.UPDATED_BY IN ('" ++ (attributes.queryParams.*"updatedBy"
+					joinBy  ("','")) ++ "')" ) else ''
+					var sortBy = if (!isEmpty(attributes.queryParams.*"sortBy")) (attributes.queryParams.*"sortBy") else []
+					var sortType = if (!isBlank(attributes.queryParams."sortType")) (upper(attributes.queryParams."sortType")) else 'DESC'
+					var sortValue = sortQuery(sortBy,sortType,'getTcAgreements')
+					---
+					(((((query replace ':messageQuery' with(title)) replace ':status' with(status)) replace ':serviceType' with(serviceType)) replace ':updatedBy' with(updatedBy)) replace ':sortQuery' with(sortValue))]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="da066beb-9119-41b8-9dd0-783addb4729f" name="startDurationLogSubFlow" />
+		<db:select doc:name="GetTcAgreementList" doc:id="4099c85b-6311-45df-bc25-9dbe12039a4f" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[#[vars.dynamicQuery]]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				offset: vars.pagination.offset - 1,
+				limit: vars.pagination.limit,
+			}]]]>
+			</db:input-parameters>
+		</db:select>
+		<flow-ref doc:name="EndDurationLog" doc:id="f537f61e-5260-493b-a94b-c96a4e9c4d7b" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="GetTcAgreementListRes" doc:id="559a7744-caf5-42ad-aac1-4ac71056317c">
+			<ee:message>
+				<ee:set-payload resource="dwl/content/tcAgreementsListRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="56a2a0fb-817f-4733-865d-7c53532d6d30" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- GET TC BY ID SUB FLOW -->
+	<sub-flow name="getTcAgreementsByIdSubFlow" doc:id="0f233b94-c6ef-4199-8ce4-44611d165785">
+		<ee:transform doc:name="Entity">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getTcAgreementsById' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="tcId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'tcId' ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="813b42ce-fc6f-42d5-a060-dad5d2eeb2d5" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="5b1cf225-77d7-466a-be38-41911f0303be" name="userDetailsSubFlow" target="userIdDetails" />
+		<flow-ref doc:name="StartDurationLog" doc:id="cf5e61db-011c-46d1-9b23-35f4669fe79e" name="startDurationLogSubFlow" />
+		<db:select doc:name="GetTcDetailsById" doc:id="3aaa9b03-28ec-4efa-bbb9-388ca0d55054" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.select.tcAgreementDetailsById}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{ tcId: vars.tcId }]]]></db:input-parameters>
+		</db:select>
+		<flow-ref doc:name="EndDurationLog" doc:id="02ac8c69-25b5-47cf-b436-2b60ad5f4717" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="GetTcByIdRes" doc:id="ae65698b-931a-4a1f-8694-712d0590bc4b">
+			<ee:message>
+				<ee:set-payload resource="dwl/content/tcAgreementsByIdRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="5be900ae-c873-4572-b7b1-44422176d5b1" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- ADD TC AGREEMENTS SUB FLOW -->
+	<sub-flow name="addTcAgreementsSubFlow" doc:id="800e481c-0074-4ad2-916e-ac2d8f69fdb1">
+		<ee:transform doc:name="Entity">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'addTCAgreements' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="bec93f97-cd32-4eb3-b4af-645740506d59" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="dc0a1c36-ab28-40d0-baa2-343daf2853a6" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="AddTCAgreementsReq">
+			<ee:message>
+				<ee:set-payload resource="dwl/content/addTCAgreementsReq.dwl"/>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.comms')]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="c556dab1-b6b4-476f-b51a-272c9cdb0c3c" name="startDurationLogSubFlow" />
+		<try>
+			<db:bulk-insert doc:name="AddTCAgreements" doc:id="537633ac-3f97-46db-b11b-1d74e0c73a1a" config-ref="azureSqlDatabaseConfig">
+				<db:sql><![CDATA[${db.query.insert.tcAgreements}]]></db:sql>
+			</db:bulk-insert>
+			<error-handler>
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="d92ad22a-87af-4d28-bdec-7478ecd4442d"
+					type="DB:QUERY_EXECUTION">
+					<raise-error doc:name="DocumentExists" doc:id="58716b0b-bae8-475f-ace9-4b477d67ee58" type="APP:DOCUMENT_ALREADY_EXISTS"
+					description="Document Already Exists"/>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<flow-ref doc:name="EndDurationLog" doc:id="0977ff5c-7266-4fa7-aa14-418e0b07e8cf" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="AddTcRes" doc:id="24a6d8ea-7652-4f0a-b866-6d2d0af4be8e">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					message: "T&C & Agreements Added Successfully" ]]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="0fca2ef6-89f2-45b7-9313-3cd34d08ba4e" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- UPDATE TC AGREEMENTS SUB FLOW -->
+	<sub-flow name="updateTcAgreementsSubFlow" doc:id="9a95d38c-976a-4df4-bfb2-c435ab73b5c3">
+		<ee:transform doc:name="Entity">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'updateTCAgreements' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="721e341f-b596-459d-9245-9989b5cea616" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="d054649a-a3d3-4fad-991c-1e79e8bb064f" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="UpdateTCAgreementsReq">
+			<ee:message>
+				<ee:set-payload resource="dwl/content/updateTCAgreementsReq.dwl"/>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.comms')]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="17d8f179-bce0-4d1d-a51f-ea26fea46344" name="startDurationLogSubFlow" />
+		<try>
+			<db:update doc:name="UpdateTCAgreements" doc:id="acf2a35f-1dad-4a3c-aa15-9ee7d5eee473" config-ref="azureSqlDatabaseConfig">
+				<db:sql><![CDATA[#[payload]]]></db:sql>
+			</db:update>
+			<error-handler>
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="a3a761b5-e883-43e0-8c46-0d148f7a6680"
+					type="DB:QUERY_EXECUTION">
+					<raise-error doc:name="DocumentExists" doc:id="c06a24f3-66c0-4eca-81b6-a6cce65fb759" description="Document Already Exists" type="APP:DOCUMENT_ALREADY_EXISTS"/>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<flow-ref doc:name="EndDurationLog" doc:id="d4ad6945-cca0-44d5-8fe6-0d2fd59cf302" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="UpdateTcRes" doc:id="61c89b09-3b26-4be6-9a96-aff3f4ff3fa3">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					message: 'T&C & Agreements Updated Successfully']]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="3c29c52d-cde4-42bf-8276-ea73c5de99c7" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+</mule>
