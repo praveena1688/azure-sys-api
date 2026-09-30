@@ -1,0 +1,827 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+	<!-- GET ORGANISATION LIST SUB FLOW -->
+	<sub-flow name="getOrgListSubFlow" doc:id="73374b75-1122-4129-b4dc-7e3b5ad80a6a">
+		<ee:transform doc:name="Entity" doc:id="b4fdc638-d878-4a65-a933-4ff387c2c40d">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getOrganisationList']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="72f65ab8-c387-45c6-9df9-41e0c9522eeb" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="7d4465a8-6d5c-49ec-8622-c544879f64d9" name="userDetailsSubFlow" target="userIdDetails" />
+		<db:select doc:name="GetOrgList" doc:id="ce1c8771-e091-4d20-b02c-b1b2d5ffeadf" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.select.orgBranchList}]]></db:sql>
+			<!-- NOTE: input-parameters expression below was hard to read in the source screenshot (line wrap made bracket-balance uncertain) - needs re-verification in Studio -->
+			<db:input-parameters><![CDATA[#[{
+				orgId: vars.userIdDetails[?($.userName == vars.userId)] filter ( p('organisation.search.roleIds') splitBy(',') contains($.roleId as String) )
+			}]]]>
+			</db:input-parameters>
+		</db:select>
+		<validation:is-not-empty-collection doc:name="ValidOrgId" doc:id="8a718c7b-f5b2-4233-bc4f-b2645972fb47" message="No Organisation is Mapped to the User" />
+		<ee:transform doc:name="OrgListRes" doc:id="8c476b3b-c12e-486d-8768-330dce39df94">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/orgListRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="5f3cbf76-7752-4fd8-91e7-e5a06915c00d" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- GET ORGANISATION DETAILS BY ID SUB FLOW -->
+	<sub-flow name="getOrgDetailsByIdSubFlow" doc:id="20390573-0875-4611-9a16-6151a87192a2">
+		<ee:transform doc:name="Entity" doc:id="0f918db7-0296-4b15-9920-35707db224b1">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getOrganisationDetailsById']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="branchId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('account.okta.branchId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="b2ba10b8-3154-4244-af3a-14493c07c78a" name="commonLoggingEntrySubFlow" />
+		<choice doc:name="isValidateOrgId" doc:id="7e724e81-7778-4fa3-b831-2fc5f42c8e2b">
+			<when expression="#[vars.pagination.relativePath contains '/validate']">
+				<flow-ref doc:name="StartDurationLog" doc:id="a406f586-564a-4770-b73b-525a1b9f94b7" name="startDurationLogSubFlow" />
+				<db:select doc:name="ValidOrgId" doc:id="03412a34-6c2d-402f-8fb8-f331f9f52a86" config-ref="azureSqlDatabaseConfig">
+					<db:sql><![CDATA[${db.query.select.orgDetailsById}]]></db:sql>
+					<db:input-parameters><![CDATA[#[{ orgId: vars.orgId }]]]></db:input-parameters>
+				</db:select>
+				<flow-ref doc:name="EndDurationLog" doc:id="74b2cf46-e4bf-4418-94de-0bfb1ef099f5" name="endDurationLogSubFlow" />
+				<validation:is-not-empty-collection doc:name="ValidOrgId" doc:id="358c8b1a-b0b6-42b1-86fd-77f157d67ea5" message="Organisation ID Not Valid" values="#[payload]" />
+				<ee:transform doc:name="OrgListRes" doc:id="3ce6f2c7-266f-497f-9780-bc9482840f9b">
+					<ee:message>
+						<ee:set-payload resource="dwl/organisation/orgListRes.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<flow-ref doc:name="CheckUserDetails" doc:id="68dc25d3-bc3d-4e93-a430-92de4e3ea4b6" name="userDetailsSubFlow" target="userIdDetails" />
+				<flow-ref doc:name="StartDurationLog" doc:id="72c88ab6-f379-4ffb-9870-dcccd5aeae99" name="startDurationLogSubFlow" />
+				<db:stored-procedure doc:name="GetOrgDetailsByOrgId" doc:id="c979a5cd-10c8-4484-b5e9-f2d9621fe44f" config-ref="azureSqlDatabaseConfig">
+					<db:sql><![CDATA[${db.query.sp.orgDetailsByOrgId}]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+						USER_ID: vars.userIdDetails[0].userId,
+						ORG_ID: vars.orgId,
+						BRANCH_ID: vars.branchId
+					}]]]>
+					</db:input-parameters>
+				</db:stored-procedure>
+				<flow-ref doc:name="EndDurationLog" doc:id="5ea23a4a-cb8a-4d9a-9057-5c78921b2ac8" name="endDurationLogSubFlow" />
+				<!-- BUG 45621 FIX -->
+				<choice doc:name="isValidRequest">
+					<when expression="#[ (!isEmpty(payload.resultSet1)) and (!isBlank(payload.resultSet1[0].MESSAGE)) and
+						(upper(payload.resultSet1[0].MESSAGE) ~= 'INSUFFICIENT PRIVILEGES') ]">
+						<raise-error doc:name="InsufficientPrivileges" doc:id="f8bbe2be-6c36-47e8-8241-0c032f494063"
+							type="APP:INSUFFICIENT_PRIVILEGES" description="Insufficient Privileges" />
+					</when>
+				</choice>
+				<validation:is-not-empty-collection doc:name="ValidOrgId" doc:id="de9f6e99-0a20-4bb2-b899-48764397752c"
+					message="Organisation ID Not Valid" values="#[payload.resultSet1]" />
+				<ee:transform doc:name="OrgListRes" doc:id="480639de-e1da-4481-b42e-e3b2645967e8">
+					<ee:message>
+						<ee:set-payload resource="dwl/organisation/orgDetailsRes.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="ResLog" doc:id="522157c3-8433-4d2e-a87b-f6d7a489c0ac" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- CREATE BRANCH BY ID SUB FLOW -->
+	<sub-flow name="createBranchByIdSubFlow" doc:id="33961ebb-4773-4535-9310-ebda75d1a3e1">
+		<ee:transform doc:name="Entity" doc:id="972dc49e-2d39-4708-9c48-ad61bff0215e">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'createBranchById']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiRequest"><![CDATA[%dw 2.0
+					output application/java
+					---
+					payload]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="7d8320bc-6554-4bdf-8b9d-1b30862a4768" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="436b8ba4-2cde-4732-b81f-5ad0d77b45da" name="userDetailsSubFlow" target="userIdDetails" />
+		<db:select doc:name="GetOrgName" doc:id="cb97a631-0437-4c4b-8e51-01fa6a4f9642" config-ref="azureSqlDatabaseConfig" target="orgNameResultSet">
+			<db:sql><![CDATA[${db.query.select.orgName}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{ orgName: vars.apiRequest.branchDetailsRequest.branchName}]]]></db:input-parameters>
+		</db:select>
+		<flow-ref doc:name="StartDurationLog" doc:id="36bd15bb-459c-4bba-bf82-46916538d32c" name="startDurationLogSubFlow" />
+		<db:select doc:name="GetOrgType" doc:id="3bdab575-5ed9-4fdc-9921-4fcf83b6c255" config-ref="azureSqlDatabaseConfig" target="orgTypeResultSet">
+			<db:sql><![CDATA[${db.query.select.orgType}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{ orgId: vars.orgId}]]]></db:input-parameters>
+		</db:select>
+		<flow-ref doc:name="EndDurationLog" doc:id="4b2b82bb-4bd9-4d7c-9b19-320434d509e2" name="endDurationLogSubFlow" />
+		<flow-ref doc:name="createBranchTVPSubflow" doc:id="3eec98f4-c63d-41e0-8c32-484bff17d368" name="createBranchTvpSubFlow" />
+		<flow-ref doc:name="StartDurationLog" doc:id="f65dca19-ebf6-48c2-b19c-d34d6d6587bd" name="startDurationLogSubFlow" />
+		<db:stored-procedure doc:name="CreateBranchByOrgId" doc:id="3be05c35-7c8c-4e38-9b97-d59f9f8ca27b" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.createBranch}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				LOGIN_BY_USER_ID: vars.userIdDetails[0].userId,
+				ORG_ID: vars.orgId,
+				ORG_TYPE: vars.orgTypeResultSet[0].ORG_TYPE,
+				STATUS: "ACTIVE",
+				BRANCH_NAME: dwl::modules::replaceSqlSingleQuotes(vars.apiRequest.branchDetailsRequest.branchName),
+				POSTCODE: vars.apiRequest.branchDetailsRequest.address.postcode default "",
+				ADDRESS_LINE_1: dwl::modules::replaceSqlSingleQuotes(vars.apiRequest.branchDetailsRequest.address.addressLine1),
+				ADDRESS_LINE_2: dwl::modules::replaceSqlSingleQuotes(vars.apiRequest.branchDetailsRequest.address.addressLine2) default null,
+				ADDRESS_TOWN: dwl::modules::replaceSqlSingleQuotes(vars.apiRequest.branchDetailsRequest.address.city) default "",
+				ADDRESS_COUNTY: dwl::modules::replaceSqlSingleQuotes(vars.apiRequest.branchDetailsRequest.address.county) default null,
+				COUNTRY: dwl::modules::replaceSqlSingleQuotes(vars.apiRequest.branchDetailsRequest.address.country),
+				CONTACT_NUMBER: vars.apiRequest.branchDetailsRequest.contactNumber,
+				SERVICE: vars.apiRequest.branchDetailsRequest.serviceRoles.service joinBy  "|" ,
+				V_SERVICE_ROLE: vars.tvpCreateBranch
+			}]]]>
+			</db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="ff1da482-4742-4e1c-a9b4-8f100d17b88b" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="CreateBranchRes" doc:id="fdec57df-10f8-4f7d-8094-30717df0d00d">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/createBranchRes.dwl" />
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="fa5510d2-639d-4189-aa00-dee8d81b2544" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- CREATE BRANCH TVP SUB FLOW -->
+	<sub-flow name="createBranchTvpSubFlow" doc:id="10b54a90-b1ba-42a3-9703-592a4b06f904">
+		<ee:transform doc:name="tvpTable" doc:id="98c20bde-5572-413d-a320-89b236c3e416">
+			<ee:variables>
+				<ee:set-variable variableName="tvpCreateBranch"><![CDATA[%dw 2.0
+					output application/java
+					---
+					{
+						tvpName: "ROLELISTTYPE"
+					} as Object {
+						class: "com.microsoft.sqlserver.jdbc.SQLServerDataTable"
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<java:invoke method="addColumnMetadata(String,int)" doc:name="UserIdColumn" doc:id="9ebef99d-44b3-4579-8a10-a248e5f7e7b7"
+			instance="#[vars.tvpCreateBranch]" class="com.microsoft.sqlserver.jdbc.SQLServerDataTable">
+			<java:args><![CDATA[#[{arg0: "USER_ID", arg1: 12}]]]></java:args>
+		</java:invoke>
+		<java:invoke doc:name="BranchNameColumn" doc:id="13e5f188-0ca6-46d6-a68c-38618fe09b87" method="addColumnMetadata(String,int)"
+			class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpCreateBranch]">
+			<java:args><![CDATA[#[{arg0: "BRANCH_NAME", arg1: 12}]]]></java:args>
+		</java:invoke>
+		<java:invoke doc:name="BranchIdColumn" doc:id="348fe931-6d97-43b8-8618-37e28ce16b64" method="addColumnMetadata(String,int)"
+			class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpCreateBranch]">
+			<java:args><![CDATA[#[{arg0: "BRANCH_ID", arg1: 12}]]]></java:args>
+		</java:invoke>
+		<java:invoke method="addColumnMetadata(String,int)" doc:name="ServiceTypeColumn" doc:id="56ea8618-3063-4a0f-93f5-cd78c590cc92"
+			instance="#[vars.tvpCreateBranch]" class="com.microsoft.sqlserver.jdbc.SQLServerDataTable">
+			<java:args><![CDATA[#[{arg0: "SERVICE_TYPE", arg1: 12}]]]></java:args>
+		</java:invoke>
+		<java:invoke doc:name="RolesColumn" doc:id="cdf4bbae-14e0-4331-9221-5a31edc4c368" method="addColumnMetadata(String,int)"
+			class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpCreateBranch]">
+			<java:args><![CDATA[#[{arg0: "ROLE_NAME", arg1: 12}]]]></java:args>
+		</java:invoke>
+		<foreach collection="#[vars.apiRequest.branchDetailsRequest.serviceRoles]" doc:name="CreateBranchReq">
+			<set-variable value="#[payload.service]" doc:name="Set ServiceType" doc:id="1778a885-34d9-4f32-8482-1146edd9b92b" variableName="serviceType" />
+			<foreach doc:name="For Each" doc:id="ed96ef1b-a6e8-4b4c-ac61-01c1aa91880" collection="#[payload.roles]">
+				<ee:transform doc:name="AddRow" doc:id="4453ec75-397c-481c-a9ea-edd869d99f2a">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+							output application/java
+							---
+							[null,vars.apiRequest.branchDetailsRequest.branchName,null,vars.serviceType,payload] ]]>
+						</ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<java:invoke method="toArray()" doc:name="Convert to Object[]" doc:id="c025d8a9-122c-400e-a21a-815546e24b23" instance="#[payload]" class="java.util.ArrayList" />
+				<java:invoke method="addRow(java.lang.Object[])" doc:name="AddRow" doc:id="52f29735-6b77-427d-b0b8-6b542db0cf06" instance="#[vars.tvpCreateBranch]"
+					class="com.microsoft.sqlserver.jdbc.SQLServerDataTable">
+					<java:args><![CDATA[#[{arg0: payload}]]]></java:args>
+				</java:invoke>
+			</foreach>
+		</foreach>
+	</sub-flow>
+
+	<!-- GET ORG BRANCH LIST SUB FLOW -->
+	<sub-flow name="getOrgBranchListSubFlow" doc:id="2a6b57e7-fcff-411e-b5d3-e38bb3733f99">
+		<ee:transform doc:name="Entity" doc:id="39dd77e9-129c-4afd-85fa-a1396578d248">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getBranchList']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="branchParams"><![CDATA[%dw 2.0
+					output application/java
+					var sortby = (attributes.queryParams.*sortBy)
+					var sorttype = attributes.queryParams.sortType
+					var sort = sortby map ((item, index) -> item ++ " " ++ ( sorttype default "ASC" ))
+					var messageQuery = attributes.queryParams.messageQuery default ""
+					---
+					{
+						messageQuery: messageQuery ,
+						sortBy: (sort joinBy ','),
+						status: (attributes.queryParams.*status map "$" joinBy ",") default null,
+						service: (attributes.queryParams.*service map "$" joinBy ",") default null
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="54b0b1b4-9fc0-4df4-8305-68c01a2ab497" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="647d3e0d-565d-4308-b502-1820f5ed6375" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="SqlVars" doc:id="bb0490b4-7e9a-4231-93f1-af5ffe1ec9cb" >
+			<ee:variables>
+				<ee:set-variable variableName="searchFilter" ><![CDATA[%dw 2.0
+					output application/json
+					var col = ["BRANCH_NAME","POSTCODE","STATUS","ACTING_ON_BEHALF_OF","CONTACT_TEL","SERVICE","LAW_SOCIETY_CODE","BRANCH_ID"]
+					---
+					{
+						searchCol: if(!isBlank(vars.branchParams.messageQuery)) ((col map(data,index)-> data ++ " LIKE '%" ++
+						vars.branchParams.messageQuery ++ "%'")joinBy " OR ")  else null
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="getOrgBranchList" doc:id="bff20dc4-b489-485b-9947-dfc4dcf74733" name="getOrgBranchListSubFlow" />
+		<!-- <validation:is-not-empty-collection doc:name="ValidOrgId" doc:id="faa59abd-d190-4fc7-ad6d-1007dd4647dc" message="Organisation Has No Branch" values="#[payload]"/> -->
+		<ee:transform doc:name="OrgListRes" doc:id="f7652663-98dc-431e-88a9-44815a361907">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/branchListRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="77b9fcc9-9a39-4710-a2cd-7f81bd1932bc" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- GET ORG BRANCH LIST -->
+	<sub-flow name="getOrgBranchListSubFlow" doc:id="50013342-155d-48ac-a621-21648d494697">
+		<flow-ref doc:name="StartDurationLog" doc:id="12220880-20e4-4eb9-9f07-ae3242b5d1bd" name="startDurationLogSubFlow" />
+		<db:stored-procedure doc:name="BranchList" doc:id="604d0770-064c-493d-8ee0-8eb8c5ce0e4b" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.orgBranchList}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				USER_ID: vars.userIdDetails.userId[0],
+				ORG_ID: vars.orgId,
+				STATUS: vars.branchParams.status,
+				SERVICE: vars.branchParams.service,
+				ISSORTFILTER: if (!isBlank(vars.branchParams.sortBy)) 1 else 0,
+				SORTCOLUMNS: vars.branchParams.sortBy default null,
+				ISKEYWORDSEARCH: if (!isBlank(vars.branchParams.messageQuery)) 1 else 0,
+				KEYWORDSEARCH: vars.searchFilter.searchCol as String default null,
+				OFFSET:vars.pagination.offset - 1,
+				LIMIT: vars.pagination.limit
+			}]]]>
+			</db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="84ee8cef-5cb4-483b-9b2f-0d59ab095cc3" name="endDurationLogSubFlow" />
+	</sub-flow>
+
+	<!-- GET ORGANISATION BRANCH LIST SUB FLOW -->
+	<sub-flow name="getBranchDetailsByIdSubFlow" doc:id="ea04c57c-e41c-4ad9-a84d-cebd87092c3d">
+		<ee:transform doc:name="Entity" doc:id="56d94704-7555-4065-84d5-23b295f443bd">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getBranchDetailsById']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="branchId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'branchId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="445dddeb-b67c-4bbe-ab58-94acd9fcb4ad" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="4dd21200-aed2-49cb-9731-96a5d6d08726" name="userDetailsSubFlow" target="userIdDetails" />
+		<db:stored-procedure doc:name="BranchDetails" doc:id="bdf1c45b-6dde-4301-bcdc-223d47e5c396" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.orgBranchDetailsById}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				USER_ID: vars.userIdDetails[0].userId,
+				ORG_ID: vars.orgId,
+				BRANCH_ID: vars.branchId
+			}]]]>
+			</db:input-parameters>
+		</db:stored-procedure>
+		<!-- BUG 45621 FIX -->
+		<choice doc:name="isValidRequest">
+			<when expression="#[ (!isEmpty(payload.resultSet1)) and (!isBlank(payload.resultSet1[0].MESSAGE)) and
+				(upper(payload.resultSet1[0].MESSAGE) ~= 'INSUFFICIENT PRIVILEGES') ]">
+				<raise-error doc:name="InsufficientPrivileges" doc:id="a13627bc-364e-40b9-9ebf-088f7a2f1f51"
+					type="APP:INSUFFICIENT_PRIVILEGES" description="Insufficient Privileges" />
+			</when>
+		</choice>
+		<validation:is-not-empty-collection doc:name="ValidOrgId" doc:id="a919b17c-c306-4bd4-84e8-f106d84cc68a" message="Organisation Has No Branch"
+			values="#[payload.resultSet1]" />
+		<ee:transform doc:name="BranchDetailsRes" doc:id="8cb92b67-4ecf-403d-aac9-861ed5b2b1c6">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/branchDetailsRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="b01c303e-3210-4c6c-84b0-1e3c5e54b4fd" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- EMAIL DOMAIN LOOKUP -->
+	<sub-flow name="getEmailDomainsSubFlow" doc:id="ff56f6a1-3143-4a27-bae7-5b7b18c8fbdd">
+		<ee:transform doc:name="Entity" doc:id="98d713ee-5e68-4716-8018-f08ab6b92c39">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getEmailDomains']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiRequest"><![CDATA[%dw 2.0
+					output application/java
+					---
+					payload ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="2e3290e3-14a8-4ebc-add8-8b58484e6d5a" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="d78587af-b513-4f8b-8e6d-350a9a939b5c" name="userDetailsSubFlow" target="userIdDetails" />
+		<flow-ref doc:name="StartDurationLog" doc:id="1d8b6d27-a119-4821-b23e-8921ba8a3cc3" name="startDurationLogSubFlow" />
+		<db:select doc:name="GetEmailDomains" doc:id="f441d33d-cf5a-46d2-b68a-7a6376d6ad40" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.select.emailDomainsList}]]></db:sql>
+		</db:select>
+		<flow-ref doc:name="EndDurationLog" doc:id="13a5100f-2e50-4fd1-a27e-a215b1f28549" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="EmailDomainsRes" doc:id="8f33f5be-9489-41bb-b6af-4c6353129f93">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/emailDomainsRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="dd20e632-cfd4-4c41-bcf3-8c4ae64dbf3e" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- GET CONTACT MANAGEMENT DETAILS SUB FLOW -->
+	<sub-flow name="getContactsSubFlow" doc:id="1310f0cb-2a1b-4c7e-ae75-5bd9e9512294">
+		<ee:transform doc:name="Entity" doc:id="7ea0aa8e-ec79-4408-8870-c5c7d6f998c2">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getContacts']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="filterBy"><![CDATA[%dw 2.0
+					import contactType from dwl::modules
+					output application/json
+					---
+					{
+						contactType: ((attributes.queryParams.*filterByContactType) map (contactType($))) default [],
+						orgUnitId: (attributes.queryParams.*filterByOrgUnitId) default []
+					}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="sortBy"><![CDATA[attributes.queryParams.*sortBy]]></ee:set-variable>
+				<ee:set-variable variableName="sortType"><![CDATA[attributes.queryParams.sortType]]></ee:set-variable>
+				<ee:set-variable variableName="messageQuery"><![CDATA[%dw 2.0
+					import * from dw::core::URL
+					output application/json encoding="UTF-8"
+					---
+					if(!isEmpty(attributes.queryParams.messageQuery)) (decodeURIComponent(attributes.queryParams.messageQuery)) else null ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="e82f06a9-dba0-4383-9c88-bb05d3c4acf0" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="47ce3c6f-14e3-4cc7-8f67-c7407e3475b6" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="SqlVars" doc:id="3f28fa70-9f41-4199-abab-bbe6a84e3797">
+			<ee:variables>
+				<ee:set-variable variableName="contactsQp"><![CDATA[%dw 2.0
+					import sortQuery from dwl::modules
+					output application/java
+					var sortBy = if (!isEmpty(vars.sortBy)) (vars.sortBy) else []
+					var sortType = if (!isBlank(vars.sortType)) (upper(vars.sortType)) else 'DESC'
+					---
+					sortQuery: sortQuery(sortBy,sortType,'getContacts') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="DynamicQuery" doc:id="870fd386-024e-4781-80c6-7871a759698a">
+			<ee:variables>
+				<ee:set-variable variableName="contactsSelectQuery"><![CDATA[%dw 2.0
+					import contactType from dwl::modules
+					output application/java
+					var query = p('db.query.select.getContactsByOrgId')
+					fun msgLikeQuery(columnName,val) = columnName ++ " LIKE '%" ++ val ++ "%'"
+					var messageQuery = if (!isBlank(vars.messageQuery))
+					( "AND (" ++ msgLikeQuery("((CO.SUB_CODE_NAME +' ('+ ISNULL(CC.ORG_UNIT_ID,''))+')')",vars.messageQuery) ++ ' OR ' ++
+					msgLikeQuery('CC.CONTACT_DEPT',vars.messageQuery) ++ ' OR ' ++
+					msgLikeQuery('CC.CONTACT_EMAIL',vars.messageQuery) ++ ' OR ' ++
+					msgLikeQuery('(CC.CONTACT_FORENAME+' ++ "' '" ++ '+CC.CONTACT_SURNAME)',vars.messageQuery) ++ ' '++
+					(if (!isBlank(contactType(vars.messageQuery))) msgLikeQuery(' OR CC.CONTACT_TYPE',contactType(vars.messageQuery))
+					else '' ) ++ ' OR ' ++
+					(msgLikeQuery('CO.SUB_CODE_NAME',vars.messageQuery)) ++ ")" ) else ''
+					var contactTypeValue = if (!isEmpty(vars.filterBy.contactType)) ( "AND CC.CONTACT_TYPE IN ('" ++ (vars.filterBy.contactType joinBy "','") ++ "')" )
+					else ( "AND CC.CONTACT_TYPE IN ('" ++ (["P","L","A","S","D"] joinBy "','") ++ "')" )
+					var orgUnitId = if (!isEmpty(vars.filterBy.orgUnitId)) ( "AND CC.ORG_UNIT_ID IN ('" ++ (vars.filterBy.orgUnitId joinBy "','") ++ "')" ) else ''
+					var sortQuery = vars.contactsQp.sortQuery
+					---
+					((((query replace ':messageQuery' with(messageQuery)) replace ':contactType' with(contactTypeValue)) replace ':branch' with(orgUnitId)) replace
+					':sortQuery' with(sortQuery))]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="6c421bc9-278e-4912-a3de-8fb34dc657d7" name="startDurationLogSubFlow" />
+		<db:select doc:name="GetContacts" doc:id="b1b5fd4b-3bb6-43ed-b675-9be5f1723a86" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[#[vars.contactsSelectQuery]]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				orgId: vars.orgId,
+				offset: vars.pagination.offset - 1,
+				limit: vars.pagination.limit }] ]]>
+			</db:input-parameters>
+		</db:select>
+		<db:select doc:name="orgNameFilter" doc:id="9646e6e3-86ea-471c-843c-a1f930ca8958" config-ref="azureSqlDatabaseConfig" target="orgName">
+			<db:sql><![CDATA[${db.query.select.orgNameFilter}]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+				orgId: vars.orgId}]]]>
+			</db:input-parameters>
+		</db:select>
+		<flow-ref doc:name="EndDurationLog" doc:id="a9deeec8-9cf5-4533-9397-18cc2c3a9274" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="ContactsListRes" doc:id="ef0b966c-c8c8-4a29-9047-fb825ccabab3">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/getContactsRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="54eb5d05-11db-4e6c-b315-cf2644ccd2ee" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- CREATE CONTACT SUB FLOW -->
+	<sub-flow name="createContactSubFlow" doc:id="7f8cb3bf-ec7f-495e-9324-d3e8ba779ad9">
+		<ee:transform doc:name="Entity" doc:id="9a1f6930-d188-4771-be99-4eed5a280997">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'createContact']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' as String ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="0410706f-8282-498b-98d7-65bb47d9f40e" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="8e2266c9-2f8b-4b3a-bf02-ce55ac11fffd" name="userDetailsSubFlow" target="userIdDetails" />
+		<flow-ref doc:name="StartDurationLog" doc:id="d300df91-4175-4651-9659-448dbff57ff" name="startDurationLogSubFlow" />
+		<ee:transform doc:name="AddContactDetails" doc:id="7e68ab6b-9bcc-40c5-a8ee-1aec04944649">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/createContactsReq.dwl" />
+			</ee:message>
+		</ee:transform>
+		<db:stored-procedure doc:name="CreateContact" doc:id="7758f4d5-bce7-4eb3-8756-fdd5a313c248" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.createContact}]]></db:sql>
+			<db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="ba2497f2-c5b3-46f9-9177-6e5fe063bd4d" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="ContactsRes" doc:id="b7ba82a8-c91a-401b-8a5b-32c6c4916c44">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/createContactRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="7a7cd45d-f0ad-4316-840a-35a9feba1d8a" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- UPDATE CONTACT SUB FLOW -->
+	<sub-flow name="updateContactSubFlow" doc:id="0c0d2b56-6634-4575-b4a2-59f6fc98b6a6">
+		<ee:transform doc:name="Entity" doc:id="bf416870-2d91-4e47-bdd7-86bf8900e530">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'updateContact']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' as String ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="contactId" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'contactId' ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="ab153b27-b813-4e9d-87a2-6e77589695e2" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="67b2aeb7-3170-4e17-8ab1-60341be3af9d" name="userDetailsSubFlow" target="userIdDetails" />
+		<flow-ref doc:name="StartDurationLog" doc:id="ff6a1dba-1bd3-44c9-adcd-227b08aaee3c" name="startDurationLogSubFlow" />
+		<ee:transform doc:name="UpdateContactDetails" doc:id="558e4b02-9fb8-4e8d-a620-173c720c591b">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/updateContactsReq.dwl" />
+			</ee:message>
+		</ee:transform>
+		<db:stored-procedure doc:name="UpdateContact" doc:id="cccc37ad-d106-46b1-828c-a7e2b5be4934" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.createContact}]]></db:sql>
+			<db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="2479d96f-7398-4e42-928e-eac2a808a861" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="ContactsRes" doc:id="c3329c64-411e-4d7e-99c2-6662873acf28">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/updateContactRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="91c5ef3d-062b-47cd-98fe-679175122aa0" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- DELETE CONTACT SUB FLOW -->
+	<sub-flow name="deleteContactSubFlow" doc:id="8ffcf089-9118-47ff-9df4-a913996f6825">
+		<ee:transform doc:name="Entity" doc:id="e0537c8c-a271-42d0-9f3c-0397861b4b34">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'updateContact']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' as String ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="contactParams" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					{
+						orgUnitId: attributes.queryParams.orgUnitId ,
+						contactType: attributes.queryParams.contactType
+					}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="contactId" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'contactId']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="242fc5e7-e38b-4993-a0cc-2730f21e7fb1" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="9d6ed084-6961-4acc-8eac-d818b5b1e79c" name="userDetailsSubFlow" target="userIdDetails" />
+		<flow-ref doc:name="StartDurationLog" doc:id="9cf0ea3a-685f-4f2e-ad18-90e200a53490" name="startDurationLogSubFlow" />
+		<ee:transform doc:name="DeleteContactDetails" doc:id="76376f7e-e048-4d3b-98c3-7008fcc41210">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/deleteContactsReq.dwl" />
+			</ee:message>
+		</ee:transform>
+		<db:stored-procedure doc:name="DeleteContact" doc:id="e72d5630-c076-4809-831d-b877bc0f8684" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.createContact}]]></db:sql>
+			<db:input-parameters><![CDATA[#[payload]]]></db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="9e799842-8240-45fe-9a02-1bbe5054fa7f" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="ContactsRes" doc:id="c8f0d941-174c-4aef-9342-aa14a9cb6896">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/updateContactRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="2ae4c00c-4f23-41ad-86d3-c27e61245a2c" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- GET CONTACTSBYID SUB FLOW -->
+	<sub-flow name="getContactsByIdSubFlow" doc:id="cc5ad58a-ed06-4c79-ae9d-f97622a89b0d">
+		<ee:transform doc:name="Entity" doc:id="dde8103a-4331-4af4-af58-ff3850c4f21b">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getContactsById']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="sortBy"><![CDATA[attributes.queryParams.*sortBy]]></ee:set-variable>
+				<ee:set-variable variableName="contactId" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'contactId' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgUnitId" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.queryParams.'orgUnitId' ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="7751f629-b989-4856-a4eb-45f6fe018e1f" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="0323fdb2-d40d-4197-b56c-753be765bd0d" name="userDetailsSubFlow" target="userIdDetails" />
+		<flow-ref doc:name="StartDurationLog" doc:id="48e3b569-82e7-491a-b6fd-dc0499c07976" name="startDurationLogSubFlow" />
+		<db:stored-procedure doc:name="GetContact" doc:id="8e216c31-76dc-4d64-8cc3-428a68d45f02" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.createContact}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				USER_ID: vars.userIdDetails[?($.userName ~= vars.userId)][0].userId default p('secure::api.db.userId'),
+				ACTION_IND: 'V',
+				CONTACT_TYPE: null,
+				ORG_ID: vars.orgId,
+				BRANCH_ID: null,
+				ORG_UNIT_ID: vars.orgUnitId,
+				CONTACT_FORENAME: null,
+				CONTACT_SURNAME: null,
+				EMAIL: null,
+				PHONE_NUMBER: null,
+				CONTACT_DEPT: null,
+				JOB_POSITION: null,
+				ASSIGNED_ALERTS: null,
+				CONTACT: null,
+				CONTACT_ID: vars.contactId,
+				ADDRESS_LINE_1: null,
+				ADDRESS_LINE_2: null,
+				ADDRESS_LINE_3: null,
+				ADDRESS_LINE_4: null,
+				ADDRESS_TOWN: null,
+				ADDRESS_COUNTY: null,
+				POSTCODE: null
+			}]]]>
+			</db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="873535b4-874f-4b07-859c-fab1920e5a8b" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="ContactByIdRes" doc:id="c36748d0-9240-45b0-a510-5d72db3d66ce">
+			<ee:message>
+				<ee:set-payload resource="dwl/organisation/contactsByIdRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="af649845-c43c-4d43-808f-a1fe1a6789bb" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+</mule>
