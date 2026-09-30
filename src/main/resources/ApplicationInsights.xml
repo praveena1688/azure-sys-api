@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationInsights xmlns="http://schemas.microsoft.com/ApplicationInsights/2013/Settings" schemaVersion="2014-05-30">
+	<!--
+	How can I find out what the SDK is doing?
+	https://docs.microsoft.com/en-us/azure/azure-monitor/app/java-2x-troubleshoot#debug-data-from-the-sdk
+	<SDKLogger type="FILE">
+		<Level>TRACE</Level>
+		<UniquePrefix>AI</UniquePrefix>
+		<BaseFolderPath>C:/Windows/Temp</BaseFolderPath>
+	</SDKLogger>
+	-->
+	<!-- The key from the portal: -->
+	<InstrumentationKey>"${sys:logging.instrumentation.key}"</InstrumentationKey>
+
+	<!-- HTTP request component (not required for bare API) -->
+	<TelemetryModules>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.modules.WebRequestTrackingTelemetryModule"/>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.modules.WebSessionTrackingTelemetryModule"/>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.modules.WebUserTrackingTelemetryModule"/>
+	</TelemetryModules>
+
+	<!-- Events correlation (not required for bare API) -->
+	<!-- These initializers add context data to each event -->
+
+	<TelemetryInitializers>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.initializers.WebOperationIdTelemetryInitializer"/>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.initializers.WebOperationNameTelemetryInitializer"/>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.initializers.WebSessionTelemetryInitializer"/>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.initializers.WebUserTelemetryInitializer"/>
+		<Add type="com.microsoft.applicationinsights.web.extensibility.initializers.WebUserAgentTelemetryInitializer"/>
+	</TelemetryInitializers>
+</ApplicationInsights>
