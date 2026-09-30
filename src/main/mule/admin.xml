@@ -1,0 +1,1498 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+	http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+	http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+	http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+	http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+	http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+	<sub-flow name="adminOrgSubFlow" doc:id="789c35ad-1d7b-4a7c-a4d0-16eca6f80108">
+		<ee:transform doc:name="Entity" doc:id="a7908366-db02-4d38-9fd0-8db2bb0a0f4e">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'adminOrganisation']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.customer')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="orgId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'orgId']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="qpParams"><![CDATA[%dw 2.0
+					output application/java
+					---
+					{
+						orgName : attributes.queryParams.'orgName',
+						insurerDaId: attributes.queryParams.'insurerId' default attributes.queryParams.'daId'
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<!-- <validation:is-not-null doc:name="OrgName" doc:id="74723159-0575-4fe5-9a6c-6717d45f2f1f" message="'orgName' Query parameter is required" value="#[vars.qpParams.orgName]"/> -->
+		<flow-ref doc:name="StartLog" doc:id="ac8f28ac-d7ed-4288-b9f7-a4e2ef690b11" name="commonLoggingEntrySubFlow" />
+		<ee:transform doc:name="DynamicQuery" doc:id="3ba4a6be-9a02-4fa0-97d5-a41b85bed77e">
+			<ee:variables>
+				<ee:set-variable variableName="orgDetailsQuery"><![CDATA[%dw 2.0
+					output application/java
+					var orgNameQuery = p('db.query.select.adminOrgDetails')
+					var insurerDaQuery = p('db.query.select.adminOrgDetailsByInsurerDa')
+					var orgName = if (!isBlank(vars.qpParams.orgName)) ("org.ORG_NAME LIKE '%" ++ (vars.qpParams.orgName replace "'" with "''" ) ++ "%'") else ''
+					var orgId = if (!isBlank(vars.orgId)) ("org.ORG_ID ='" ++ vars.orgId ++ "'") else ''
+					---
+					if ((!isBlank(vars.qpParams.insurerDaId))) (insurerDaQuery replace ':insurerDaId' with("'" ++ vars.qpParams.insurerDaId ++ "'")) else
+					((orgNameQuery replace ':orgName' with(orgName)) replace ':orgId' with(orgId))]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="feb0795d-e87b-4176-b32a-fb59b87958ad" name="startDurationLogSubFlow" />
+		<db:select doc:name="OrgDetails" doc:id="00c411eb-2371-498c-9026-618306c9e306" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[#[vars.orgDetailsQuery]]]></db:sql>
+		</db:select>
+		<flow-ref doc:name="EndDurationLog" doc:id="475917ba-e711-4b52-a6c2-8426a04c52fe" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="AdminOrgRes" doc:id="c8da58de-4d0e-4ac6-b834-d5be9ddd4b2d">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					data: (if (!isBlank(vars.orgName)) ((payload map {
+						orgId: $.ORG_ID,
+						orgName: $.ORG_NAME,
+						orgType: $.ORG_TYPE,
+						primaryBranch: $.PRIMARY_BRANCH,
+						branchId: $.BRANCH_ID,
+						midOrgUnitId: $.MID_ORG_UNIT_ID,
+						miaftrOrgUnitId: $.MIAFTR_ORG_UNIT_ID
+					}) groupBy ((item, index) -> item.orgName)) else (payload map {
+						orgId: $.ORG_ID,
+						orgName: $.ORG_NAME,
+						orgType: $.ORG_TYPE,
+						primaryBranch: $.PRIMARY_BRANCH,
+						branchId: $.BRANCH_ID,
+						midOrgUnitId: $.MID_ORG_UNIT_ID,
+						miaftrOrgUnitId: $.MIAFTR_ORG_UNIT_ID
+					})) groupBy ((item, index) -> item.orgName)]]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="a2ace4fc-8d05-4d4f-a371-c56a50b47e0f" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="adminUserByIdSubFlow" doc:id="c0bbb1a3-9014-4057-8a8c-b3345aa73ccc">
+		<ee:transform doc:name="Entity" doc:id="960f8599-8cb7-43ba-8e54-537af376ae6d">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'adminUserById']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.userprofile')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'userId']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="requestType" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.queryParams.'requestType' default 'API']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="siteNbr" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.queryParams.'siteNbr' ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="supplierId" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.queryParams.'supplierId' ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="2cfc6a21-ee2c-4eb1-a5e2-e6de8d50f551" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="StartDurationLog" doc:id="41ce4d98-632d-4e65-8e2c-5110c182ec82" name="startDurationLogSubFlow" />
+		<choice doc:name="isApiOrSftp" doc:id="3b691263-f515-4a72-9530-b072f8567260">
+			<when expression='#[vars.requestType == "API"]'>
+				<db:select doc:name="UserDetails" doc:id="967e7112-e09b-47ee-90af-9d622c0c3871" config-ref="azureSqlDatabaseConfig">
+					<db:sql><![CDATA[${db.query.select.adminUserDetailsByUserId}]]></db:sql>
+					<db:input-parameters><![CDATA[#[{ userId: vars.userId }]]]></db:input-parameters>
+				</db:select>
+				<flow-ref doc:name="EndDurationLog" doc:id="6fb13a51-cc38-4cd7-9829-805e91bf71ac" name="endDurationLogSubFlow" />
+				<ee:transform doc:name="AdminUserDetailsRes" doc:id="d806ded4-12bd-42b4-806e-2f46f1f7a928" >
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+							output application/json
+							var a = payload groupBy ((item, index) -> item.BRANCH_ID ++ item.USER_ID)
+							var b = a pluck ((value, key, index) -> ({
+								branchId: value.BRANCH_ID[0],
+								serviceType: value.SERVICE_TYPE,
+								userRoles: value.ROLE_NAME,
+								userId: value.USER_ID }))
+							---
+							data: (payload map {
+								apiUserStatus: $.STATUS,
+								apiUserName: $.USER_NAME,
+								email: $.EMAIL_ADDRESS,
+								orgId: $.ORG_ID,
+								serviceType: $.SERVICE_TYPE,
+								apiCredentialExpiryDate: if (!isBlank($.API_SECRET_EXPIRY_DATES)) ( if (sizeOf($.API_SECRET_EXPIRY_DATES splitBy('|')) > 2)
+								((($.API_SECRET_EXPIRY_DATES splitBy('|'))[-2]) ++ ',' ++ (($.API_SECRET_EXPIRY_DATES splitBy('|')))[-1])
+								else (($.API_SECRET_EXPIRY_DATES splitBy('|')) joinBy "," ) ) else null,
+								branchList: (b filter ((item, index) -> item.userId[0] == $.USER_ID)) map $ - 'userId'} distinctBy ((value, key) -> (value.userId))]]>
+						</ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<when expression='#[vars.requestType == "SFTP"]'>
+				<db:stored-procedure doc:name="GetSFTP" doc:id="8ca17b67-8c2f-4e66-a4db-ed1e273d34f6" config-ref="azureSqlDatabaseConfig" >
+					<db:sql><![CDATA[${db.query.sp.adminUserById}]]></db:sql>
+					<db:input-parameters><![CDATA[#[output application/java
+						---
+						{
+							VIEW_IND: 'V',
+							USER_NAME: vars.userId,
+							SITE_NBR: vars.siteNbr,
+							SUPPLIER_ID: vars.supplierId
+						}] ]]>
+					</db:input-parameters>
+				</db:stored-procedure>
+				<flow-ref doc:name="EndDurationLog" doc:id="89627a0e-fe9f-4f5f-900f-dc5446843dd5" name="endDurationLogSubFlow" />
+				<ee:transform doc:name="AdminUserSftpDetailsRes" doc:id="a1bdb57e-1d7c-4fbf-bcce-eaf64979c32a">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+							output application/json
+							var resultSet = payload.resultSet1
+							---
+							{
+								data: payload.resultSet1 map {
+									siteName: $.SITE_NAME,
+									sftpUserName: $.SFTP_USER_NAME,
+									emailAddress: $.EMAIL_ADDRESS,
+									siteNbr: $.SITE_NBR splitBy('|'),
+									orgId: $.ORG_ID,
+									sftpUserStatus: $.SFTP_USER_STATUS}}]]>
+						</ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<raise-error doc:name="InvalidRequest" doc:id="a7c4fba6-bf2e-47b4-9230-3990c8a72991"
+					description="Query Params 'requestType' missing " type="APP:INVALID_REQUEST" />
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="ResLog" doc:id="e95f1eb7-5271-442f-b345-c795adaeea41" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!--GET ADMIN USERS LIST SUB FLOW -->
+	<sub-flow name="adminUsersListSubFlow" doc:id="f50ff0c4-de4d-4820-a8f6-d15a17bffe23">
+		<ee:transform doc:name="Entity" doc:id="76f4d061-5437-4557-b074-5177869fd3dd">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'adminUsersListSubFlow']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.userprofile')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="adminUsersListParams" ><![CDATA[%dw 2.0
+					output application/java
+					var filterByType = attributes.queryParams.*filterByType map "$"
+					var filterByOrganisation = attributes.queryParams.*filterByOrganisationId map "$"
+					var filterByStatus = attributes.queryParams.*filterByStatus map "$"
+					---
+					{
+						messageQuery: if (!isEmpty(attributes.queryParams.messageQuery)) attributes.queryParams.messageQuery else null,
+						policySearchQuery: if (!isEmpty(attributes.queryParams.policySearchQuery)) attributes.queryParams.policySearchQuery else null,
+						filterByIdIndicator: if (!isEmpty(attributes.queryParams.filterByIdIndicator)) upper(attributes.queryParams.filterByIdIndicator as String) else null,
+						sortBy: attributes.queryParams.sortBy default '',
+						sortType: attributes.queryParams.sortType default 'ASC',
+						filterByType: if (!isEmpty(filterByType)) filterByType joinBy "," else null,
+						filterByOrganisation: if (!isEmpty(filterByOrganisation)) filterByOrganisation joinBy "," else null,
+						filterByStatus: if (!isEmpty(filterByStatus)) filterByStatus joinBy "," else null
+					}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="cacheKey"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'ADMIN_USERS_FILTERS:' ++ (vars.adminUsersListParams.filterByType default 'ALL') ++ ':' ++ (vars.adminUsersListParams.filterByOrganisation default 'ALL')
+					++ ':' ++ (vars.adminUsersListParams.filterByStatus default 'ALL')]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="6aa05360-b587-46e5-943d-3b317a794ef8" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="b0cfc6d2-7e28-4da7-bc6e-54fda6c66124" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="adminUsersListReq" doc:id="6ad11f40-945b-411e-87b8-2344c80bde07">
+			<ee:variables>
+				<ee:set-variable variableName="dataInd"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if ((vars.adminUsersListParams.filterByIdIndicator default '') == 'F') 'F' else 'T']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="viewUserId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					null]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="adminUsersListQp"><![CDATA[%dw 2.0
+					output application/java
+					fun sortColumns(columnName) =
+						if (columnName == 'FORENAME') ['FIRST_NAME', 'SURNAME', 'EMAIL_ADDRESS', 'ORGANISATION']
+						else if (columnName == 'SURNAME') ['SURNAME', 'FIRST_NAME', 'EMAIL_ADDRESS', 'ORGANISATION']
+						else if (columnName == 'EMAIL') ['EMAIL_ADDRESS', 'FIRST_NAME', 'SURNAME', 'ORGANISATION']
+						else if (columnName == 'ORGANISATION') ['ORGANISATION', 'FIRST_NAME', 'SURNAME', 'EMAIL_ADDRESS']
+						else []
+					var sortBy = vars.adminUsersListParams.sortBy default ''
+					var sortType = vars.adminUsersListParams.sortType default 'ASC'
+					---
+					{
+						sortQuery: if (isEmpty(sortColumns(sortBy))) null else ((sortColumns(sortBy)) map ($ ++ ' ' ++ sortType)) joinBy ', '
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Choice" doc:id="bdc47d13-a78e-4651-aa52-c9b8db881850">
+			<when expression="#[(vars.dataInd default 'T') == 'F']">
+				<ee:cache doc:name="adminUsersListFiltersCache" doc:id="8b9e8c1a-7f3e-4d2c-a5b1-9c8d7e6f5a4b" cachingStrategy-ref="lookupCachingStrategy">
+					<ee:transform doc:name="Override pagination limit to 500" doc:id="admin-override-limit">
+						<ee:variables>
+							<ee:set-variable variableName="pagination"><![CDATA[%dw 2.0
+								output application/java
+								---
+								vars.pagination ++ {limit: attributes.queryParams.limit default 500}]]>
+							</ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<flow-ref doc:name="StartDurationLog" doc:id="e2920a59-c560-4b43-ac2d-dd1188d24adb" name="startDurationLogSubFlow" />
+					<db:stored-procedure doc:name="AdminUsersListFilterDetails" doc:id="7820aa94-a638-451b-b1ef-1341e52ecbe8" config-ref="azureSqlDatabaseReadOnlyConfig">
+						<db:sql><![CDATA[${db.query.sp.adminUsersListById}]]></db:sql>
+						<db:input-parameters><![CDATA[#[output application/java
+							---
+							{
+								LOGIN_USER_ID: vars.userIdDetails.userId[0],
+								DATA_IND: vars.dataInd,
+								VIEW_USER_ID: null,
+								SEARCH_IND: 0,
+								SEARCH_VAL: null,
+								SEARCH_POL_IND: 0,
+								SEARCH_POL_VAL: null,
+								FILTER_TYPE_IND: 0,
+								FILTER_TYPE_VALUE: null,
+								FILTER_ORG_IND: 0,
+								FILTER_ORG_VALUE: null,
+								FILTER_STAUS_IND: 0,
+								FILTER_STATUS_VALUE: null,
+								SORT_IND: 0,
+								SORT_COLUMN: null}]]]>
+						</db:input-parameters>
+					</db:stored-procedure>
+					<flow-ref doc:name="EndDurationLog" doc:id="fd0fb003-eeb3-4c16-974b-436bf995cb27" name="endDurationLogSubFlow" />
+					<validation:is-null doc:name="IsError" doc:id="7bbfc33f-c82d-4e80-a050-5bdb50ff9b60"
+						message="#[(payload.resultSet1[0].ERROR) default null]" value="#[(payload.resultSet1[0].ERROR) default null]"/>
+					<ee:transform doc:name="AdminUsersListFiltersRes" doc:id="798ada12-5ff8-400c-a943-f16f12775941">
+						<ee:message>
+							<ee:set-payload resource="dwl/admin/adminUserListFiltersRes.dwl" />
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+						</ee:variables>
+					</ee:transform>
+				</ee:cache>
+			</when>
+			<otherwise>
+				<flow-ref doc:name="GetAdminUsersListSubFlow" doc:id="fd662913-27a6-426f-b79e-13e0a234e3b8" name="adminUsersDbSubFlow" />
+				<ee:transform doc:name="AdminUsersListRes" doc:id="9c68a415-a955-44e9-bcaa-58b6bcf0415e">
+					<ee:message>
+						<ee:set-payload resource="dwl/admin/adminUserListRes.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="ResLog" doc:id="ea83837d-e36f-4873-8cbf-1206bdceb696" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!--GET ADMIN USER List DETAILS BY ID SUB FLOW -->
+	<sub-flow name="adminUserListDetailsByIdSubFlow" doc:id="9746ea2f-b4be-448a-b014-70a7ae97e2c4">
+		<ee:transform doc:name="Entity" doc:id="450bf334-a26e-4298-8d5c-98c924cf3b8f">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'adminUserListDetailsByIdSubFlow']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.userprofile')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="viewUserId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'userId' default null]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="adminUsersListParams"><![CDATA[%dw 2.0
+					output application/java
+					---
+					{
+						messageQuery: if (!isEmpty(attributes.queryParams.messageQuery)) attributes.queryParams.messageQuery else null,
+						policySearchQuery: if (!isEmpty(attributes.queryParams.policySearchQuery)) attributes.queryParams.policySearchQuery else null
+					}
+					]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="baddb3b3-0a80-42f2-8554-6c8faa205b48" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="9a134578-d957-4935-95c7-d555dac2a596" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="adminUserByIdReq" doc:id="331022db-1c27-4aa0-b73f-579dbec14e85">
+			<ee:variables>
+				<ee:set-variable variableName="dataInd"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'V']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="viewUserId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (isBlank(vars.viewUserId default '')) null else vars.viewUserId]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="oktaUserDetails"><![CDATA[%dw 2.0
+					output application/java
+					---
+					null]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="8d6f1a8e-c8b2-4f1e-9b3d-5c7e6a2d9f1a" name="startDurationLogSubFlow" />
+		<flow-ref doc:name="GetAdminUserByIdSubFlow" doc:id="3a87d91c-509e-4284-84e9-0c4f66ba6cea" name="adminUsersDbSubFlow" />
+		<flow-ref doc:name="EndDurationLog" doc:id="9c7e2b1f-a3d5-4c6e-8f2a-1d9e7b5c3a6f" name="endDurationLogSubFlow" />
+		<choice doc:name="HasUserData" doc:id="c4d2e5a8-f1b6-4a8d-9c3e-7f1d2e5a8b3c">
+			<when expression="#[!isEmpty(payload.resultSet1)]">
+				<ee:transform doc:name="OktaUserReq" doc:id="a1ef76cf-d925-4c69-b37d-1712f1d5ebc9">
+					<ee:variables>
+						<ee:set-variable variableName="systemapi"><![CDATA[%dw 2.0
+							output application/java
+							var oktaLookupUserId = (payload.resultSet1[0].USER_NAME default payload.resultSet1[0].EMAIL_ADDRESS) as String
+							---
+							{
+								host: p('secure::systemapi.utility.host'),
+								port: p('secure::systemapi.utility.port'),
+								basePath: p('systemapi.utility.basePath') default '',
+								entityPath: (p('systemapi.utility.path.okta.getUser')) replace '{userId}' with(oktaLookupUserId),
+								clientId: p('secure::systemapi.utility.clientId'),
+								clientSecret: p('secure::systemapi.utility.clientSecret')
+							}]]>
+						</ee:set-variable>
+						<ee:set-variable variableName="httpMethod"><![CDATA[%dw 2.0
+							output application/java
+							---
+							'GET']]>
+						</ee:set-variable>
+						<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+							output application/java
+							---
+							p('external.systemapi.utility.okta')]]>
+						</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<try doc:name="TryOktaCall" doc:id="try-okta-call-admin-user-by-id">
+					<flow-ref doc:name="SystemApiCall" doc:id="971da7e6-1f01-471d-b7b1-cb3f44018a80" name="systemApiCallSubFlow" target="oktaUserDetails" />
+					<error-handler>
+						<on-error-continue doc:name="SkipOktaNotFound" doc:id="2f43c0fd-e638-4ef8-9e8e-83a668a018ca"
+							type="HTTP:NOT_FOUND,HTTP:INTERNAL_SERVER_ERROR,HTTP:TOO_MANY_REQUESTS" enableNotifications="false" logException="false">
+						</on-error-continue>
+					</error-handler>
+				</try>
+			</when>
+		</choice>
+		<choice doc:name="CheckUserType" doc:id="a1735737-f762-40ca-983b-4eb931a784eb">
+			<when expression="#[(!isEmpty(payload.resultSet1)) and (((payload.resultSet1[0].USER_TYPE default '') as String) == 'Policyholder')]">
+				<ee:transform doc:name="AdminUserTypePolicyHolderRes" doc:id="d16adfdc-104b-4a0e-8d21-2f07a59ef6d1">
+					<ee:message>
+						<ee:set-payload resource="dwl/admin/AdminUserTypeRes.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<ee:transform doc:name="AdminViewUserByIdRes" doc:id="75bbf8f6-ebfd-4e42-b19d-42dc53674d5a">
+					<ee:message>
+						<ee:set-payload resource="dwl/admin/adminUserByIdRes.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="ResLog" doc:id="d5516fdf-b793-40da-9169-9949b107bad9" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!--GET ADMIN USERS LIST AND USER DETAILS BY ID DB SUB FLOW -->
+	<sub-flow name="adminUsersDbSubFlow" doc:id="0eba9a01-2403-4e30-acec-cde40391bfe0">
+		<ee:transform doc:name="Override pagination limit to 500" doc:id="admin-override-limit">
+			<ee:variables>
+				<ee:set-variable variableName="pagination"><![CDATA[%dw 2.0
+					output application/java
+					---
+					vars.pagination ++ {limit: attributes.queryParams.limit default 500}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="e2920a59-c560-4b43-ac2d-dd1188d24adb" name="startDurationLogSubFlow" />
+		<db:stored-procedure doc:name="Admin UsersList And UserById" doc:id="7820aa94-a638-451b-b1ef-1341e52ecbe8" config-ref="azureSqlDatabaseReadOnlyConfig">
+			<db:sql><![CDATA[${db.query.sp.adminUsersListById}]]></db:sql>
+			<db:input-parameters><![CDATA[#[output application/java
+				---
+				{
+					LOGIN_USER_ID: vars.userIdDetails.userId[0],
+					DATA_IND: vars.dataInd,
+					VIEW_USER_ID: vars.viewUserId default null,
+					SEARCH_IND: if (!isBlank(((vars.adminUsersListParams default {}).messageQuery) default vars.messageQuery default '')) 1 else 0,
+					SEARCH_VAL: ((vars.adminUsersListParams default {}).messageQuery) default vars.messageQuery default null,
+					SEARCH_POL_IND: if (!isBlank(((vars.adminUsersListParams default {}).policySearchQuery) default vars.policySearchQuery default '')) 1 else 0,
+					SEARCH_POL_VAL: ((vars.adminUsersListParams default {}).policySearchQuery) default vars.policySearchQuery default null,
+					FILTER_TYPE_IND: if (!isBlank(((vars.adminUsersListParams default {}).filterByType) default '')) 1 else 0,
+					FILTER_TYPE_VALUE: ((vars.adminUsersListParams default {}).filterByType) default null,
+					FILTER_ORG_IND: if (!isBlank(((vars.adminUsersListParams default {}).filterByOrganisation) default '')) 1 else 0,
+					FILTER_ORG_VALUE: ((vars.adminUsersListParams default {}).filterByOrganisation) default null,
+					FILTER_STAUS_IND: if (!isBlank(((vars.adminUsersListParams default {}).filterByStatus) default '')) 1 else 0,
+					FILTER_STATUS_VALUE: ((vars.adminUsersListParams default {}).filterByStatus) default null,
+					SORT_IND: if (!isBlank(((vars.adminUsersListQp default {}).sortQuery) default vars.userListSortColumn default '')) 1 else 0,
+					SORT_COLUMN: ((vars.adminUsersListQp default {}).sortQuery) default vars.userListSortColumn default null}]]]>
+			</db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="fd0fb003-eeb3-4c16-974b-436bf995cb27" name="endDurationLogSubFlow" />
+		<validation:is-null doc:name="IsError" doc:id="7bbfc33f-c82d-4e80-a050-5bdb50ff9b60"
+			message="#[(payload.resultSet1[0].ERROR) default null]" value="#[(payload.resultSet1[0].ERROR) default null]"/>
+	</sub-flow>
+
+	<sub-flow name="adminUsersSubFlow" doc:id="a3618f46-1491-49b9-9048-5bbe700452b6">
+		<ee:transform doc:name="Entity" doc:id="627487fe-7896-4289-aa32-e5bc6ebaa5f6">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'adminUsers']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.userprofile')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="adminSFTPQuery" ><![CDATA[output application/json
+					var status = attributes.queryParams.*filterByStatus map "$" joinBy ","
+					var policy = attributes.queryParams.*filterByPolicy map "$" joinBy ","
+					var sortby = (attributes.queryParams.*sortBy)
+					var sorttype = attributes.queryParams.sortType
+					var sort = sortby map ((item, index) -> item ++ " " ++ ( sorttype default "ASC" ))
+					---
+					{
+						sortBy: (sort joinBy ','),
+						filterByStatus: if ( !isEmpty(attributes.queryParams.filterByStatus) ) status else null,
+						filterByPolicy: if ( !isEmpty(attributes.queryParams.filterByPolicy) ) policy else null,
+						searchBy: attributes.queryParams.searchBy}]]>
+				</ee:set-variable>
+				<!-- NOTE: the following adminSearchQuery variable was cut off at the right margin of the source screenshot in several places (marked [TRUNCATED] below) and needs re-verification in Studio -->
+				<ee:set-variable variableName="adminSearchQuery" ><![CDATA[%dw 2.0
+					import sortQuery from dwl::modules
+					output application/java
+					var query = p('db.query.select.adminUserDetails')
+					var sortBy = if (!isEmpty(attributes.queryParams.*"sortBy")) (attributes.queryParams.*"sortBy") else []
+					var sortType = if (!isBlank(attributes.queryParams."sortType")) (upper(attributes.queryParams."sortType")) else 'DESC'
+					var sortParams = sortQuery(sortBy,sortType,'adminUsers')
+					var searchQueryParams = if (!isBlank(attributes.queryParams."searchQuery")) ("AND " ++ "(users.STATUS LIKE '%" ++ (attributes.queryParams."searchQuery") ++ "%'") /* [TRUNCATED] */ else ''
+					var filterByStatusParams = if (!isEmpty(attributes.queryParams.*"status")) ("AND users.STATUS IN ( " ++ (attributes.queryParams.*"status" map ("'" ++ $ ++ "'"))) /* [TRUNCATED] */ else ''
+					var filterByRolesParams = if (!isEmpty(attributes.queryParams.*"userRoles")) ("AND ROLE_NAME IN ( " ++ (attributes.queryParams.*"userRoles" map ("'" ++ $ ++ "'"))) /* [TRUNCATED] */ else ''
+					var filterByServiceTypesParams = if (!isEmpty(attributes.queryParams.*"serviceType")) ("AND roles.SERVICE_TYPE IN (" ++ (attributes.queryParams.*"serviceType" map ("'" ++ $ ++ "'"))) /* [TRUNCATED] */ else ''
+					---
+					(((((query replace ':searchQuery' with(searchQueryParams)) replace ':filterByStatus' with(filterByStatusParams)) replace ':filterByRoles' with(filterByRolesParams)) replace ':filterByServiceType' with(filterByServiceTypesParams)) replace ':sortParams' with(sortParams))]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="e54c07ec-f803-4bad-a857-1199226a4857" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="StartDurationLog" doc:id="0949c097-aa54-4900-bc25-981f08b94c14" name="startDurationLogSubFlow" />
+		<choice doc:name="Choice" doc:id="a770ce73-4235-41ab-a03f-57be0a1686cc" >
+			<when expression='#[attributes.queryParams.requestType == "API"]'>
+				<db:select doc:name="UserDetails" doc:id="27145034-af6b-4ecf-8706-dfd6321fc2b5" config-ref="azureSqlDatabaseConfig">
+					<db:sql><![CDATA[#[vars.adminSearchQuery]]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+						offset: vars.pagination.offset - 1,
+						limit: vars.pagination.limit}]]]>
+					</db:input-parameters>
+				</db:select>
+				<flow-ref doc:name="EndDurationLog" doc:id="7db1a5d1-f36c-4b40-88b4-225d9d179d69" name="endDurationLogSubFlow" />
+				<ee:transform doc:name="AdminUserDetailsRes" doc:id="ddcd838a-739e-4ec2-af68-f929acbbe6f1" >
+					<ee:message>
+						<ee:set-payload resource="dwl/admin/adminUserDetailsRes.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="ResLog" doc:id="44194a8f-b161-4218-bc59-79e1c024380b" name="commonLoggingExitSubFlow" />
+			</when>
+			<otherwise>
+				<db:stored-procedure doc:name="GetSFTP" doc:id="a656c2a8-fe93-4f69-93e9-861c148f544a" config-ref="azureSqlDatabaseConfig" >
+					<db:sql ><![CDATA[${db.query.sp.adminUsers}]]></db:sql>
+					<db:input-parameters ><![CDATA[#[output application/java
+						---
+						{
+							VIEW_IND: 'S',
+							USER_NAME: attributes.queryParams.userName,
+							SITE_NBR: attributes.queryParams.siteNbr,
+							SUPPLIER_ID: attributes.queryParams.supplierId,
+							SEARCH_IND: if (!isBlank(vars.adminSFTPQuery.searchBy)) 1 else 0,
+							SEARCH_WORD: vars.adminSFTPQuery.searchBy default null,
+							STATUS_IND: if(!isEmpty(vars.adminSFTPQuery.filterByStatus)) 1 else 0,
+							FILTER_STATUS: vars.adminSFTPQuery.filterByStatus,
+							POLICY_IND: if(!isEmpty(vars.adminSFTPQuery.filterByPolicy)) 1 else 0,
+							FILTER_POLICY: vars.adminSFTPQuery.filterByPolicy,
+							ISSORTFILTER: if (!isBlank(vars.adminSFTPQuery.sortBy)) 1 else 0,
+							SORTCOLUMNS: vars.adminSFTPQuery.sortBy default null,
+							OFFSET: vars.pagination.offset - 1,
+							LIMIT: vars.pagination.limit}]]]>
+					</db:input-parameters>
+				</db:stored-procedure>
+				<flow-ref doc:name="EndDurationLog" doc:id="acf79c00-ab47-484b-8362-f3c91c6c92e8" name="endDurationLogSubFlow" />
+				<!-- NOTE: absPath expression below was cut off at the right margin in the source screenshot and needs re-verification in Studio -->
+				<ee:transform doc:name="AdminUserSftpDetailsRes" doc:id="0ab3bc2a-061a-4dd1-b73b-ecef047b9c9b">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+							import * from dw::core::Strings
+							import calculateOffset,paginationQp,dateConversionDateYear from dwl::modules
+							output application/json
+							var resultSet = payload.resultSet1
+							var totalRecords = if ( !isEmpty(resultSet) ) resultSet[0].TOTAL_RECORD_COUNT else 0
+							var absPath = (((((vars.apiName splitBy('?'))[1]) splitBy('&')) filter (!($ contains 'limit') and !($ contains 'offset'))) joinBy '&') /* [TRUNCATED] */
+							---
+							{
+								data: payload.resultSet1 map {
+									sftpUserStatus: $.SFTP_USER_STATUS,
+									sftpUserName: $.SFTP_USER_NAME,
+									emailAddress: $.EMAIL_ADDRESS,
+									orgId: $.ORG_ID,
+									siteNbr: $.SITE_NBR splitBy('|'),
+									totalRecordCount: $.TOTAL_RECORD_COUNT},
+								currentUrl: vars.scheme ++ "://" ++ vars.host ++ vars.apiName,
+								nextUrl: if ( totalRecords > calculateOffset(vars.pagination.limit, vars.pagination.offset - 1) ) (vars.scheme ++ "://" ++ vars.host ++ vars.apiName) else null,
+								total: totalRecords}]]>
+						</ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="ResLog" doc:id="07a68deb-adde-44a0-b9a3-724147b25b09" name="commonLoggingExitSubFlow" />
+			</otherwise>
+		</choice>
+	</sub-flow>
+
+	<sub-flow name="adminDeleteUserSubFlow" doc:id="a27be3e9-8deb-46cf-9aa2-5653ed0102aa">
+		<ee:transform doc:name="Entity" doc:id="dd51fc25-1fe7-4939-b134-9fde7f5316ab">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'adminDeleteUser']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.userprofile')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'userId']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="fa03ad90-4620-46db-b74d-b3b7049b3268" name="commonLoggingEntrySubFlow" />
+		<ee:transform doc:name="AdminUserDetailsRes" doc:id="418d71ce-5b34-410f-b019-b2c6c739c43b">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/java
+					var users = p('db.query.delete.users')  replace ':userName' with("'" ++ vars.userId ++ "'")
+					var userRegInfo = p('db.query.delete.usersRegInfo')  replace ':userName' with("'" ++ vars.userId ++ "'")
+					var userRoles = p('db.query.delete.userRoles') replace ':userName' with("'" ++ vars.userId ++ "'")
+					---
+					userRoles ++ ';' ++ userRegInfo ++ ';' ++ users]]>
+				</ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="dd6444a6-f118-4a36-8f8e-269f3b5af297" name="startDurationLogSubFlow" />
+		<db:execute-script doc:name="DeleteUser" doc:id="67327fa5-f6fe-4ed4-9ef8-27312ffe49cb" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[#[payload]]]></db:sql>
+		</db:execute-script>
+		<flow-ref doc:name="EndDurationLog" doc:id="25662c3a-5c0b-4ca0-9838-ebad12471240" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="AdminUserDetailsRes" doc:id="6a170525-e16a-4c9b-8995-963d250c85d3">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					message: 'User Deleted Successfully']]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="5212ac73-99e6-4a5e-828c-35288fc05e6f" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="adminSftpUserSubFlow" doc:id="3d5ae894-223d-43fb-9976-dd872a8499a6">
+		<ee:transform doc:name="Entity" doc:id="6d00a028-4876-4c53-80e9-d6edf9fa67cd">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					userRegisterRequest: payload.sftpUserRequest ]]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'adminSftpUser']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.userprofile')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="sftpRequest"><![CDATA[%dw 2.0
+					output application/java
+					---
+					payload]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="82e985ce-fd65-4623-b3be-008db3b07e3f" name="commonLoggingEntrySubFlow" />
+
+		<!-- INSERT INTO USERS TABLE -->
+		<flow-ref doc:name="CreateUser" doc:id="41e551d5-aaad-44b7-a9f2-217d2977278e" name="createUserSubFlow" />
+
+		<!-- CALL STORE PROCEDURE -->
+		<flow-ref doc:name="SiteDetailsTvp" doc:id="64dc9856-5cc2-43ec-99de-0b15b20a4fed" name="siteDetailsTvpSubFlow" />
+		<ee:transform doc:name="SiteDetailReq" doc:id="9d4004fa-6c86-4423-9a9b-5cb5205e5c78">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					import userTypeCode,dateTimeSqlConversion from dwl::modules
+					output application/java
+					---
+					vars.sftpRequest.sftpUserRequest.siteDetails map {
+						insurerId: if (!isBlank(vars.sftpRequest.sftpUserRequest.insurerId)) 'I' ++ vars.sftpRequest.sftpUserRequest.insurerId else null,
+						daId : if (!isBlank(vars.sftpRequest.sftpUserRequest.daId)) 'D' ++ vars.sftpRequest.sftpUserRequest.daId else null,
+						option: if (!isBlank($.option)) $.option as String else null,
+						phase: if (!isBlank($.phase)) $.phase as String else null,
+						siteNbr: $.siteId}]]>
+				</ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<foreach collection="#[payload]" doc:name="SiteDetailsReq">
+			<ee:transform doc:name="AddRow" doc:id="050e49de-15a7-4df3-98f4-ee9ee98b1c0f">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+						output application/java
+						---
+						[payload.insurerId,payload.daId,payload.option,payload.phase,payload.siteNbr] ]]>
+					</ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<java:invoke method="toArray()" doc:name="Convert to Object[]" doc:id="db8105a7-7e23-4978-8045-161ace4019f6"
+				instance="#[payload]" class="java.util.ArrayList" />
+			<java:invoke method="addRow(java.lang.Object[])" doc:name="AddRow" doc:id="81fdd776-35f6-429b-b898-3e6f7c82cfaf" instance="#[vars.tvpSiteDetails]"
+				class="com.microsoft.sqlserver.jdbc.SQLServerDataTable">
+				<java:args><![CDATA[#[{arg0: payload}]]]></java:args>
+			</java:invoke>
+		</foreach>
+		<flow-ref doc:name="StartDurationLog" doc:id="a3bcfbcb-dfe7-4c41-9bb7-5955f65700f4" name="startDurationLogSubFlow" />
+		<db:stored-procedure doc:name="SiteDetails" doc:id="cffd3f45-06c4-4a8a-88dc-59bd4d627536" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.sftpSiteDetails}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{tableVariable: vars.tvpSiteDetails}]]]></db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="6b8b20c5-e7b6-45ec-9a96-05ec0805009d" name="endDurationLogSubFlow" />
+
+		<!-- INSERT INTO USER_SITE_MAP_DTL TABLE -->
+		<ee:transform doc:name="SiteDetailReq" doc:id="2fbb3f5a-d626-4080-b3a6-8472b7ef0335">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/java
+					---
+					vars.sftpRequest.sftpUserRequest.siteDetails map {
+						userName: vars.sftpRequest.sftpUserRequest.userName,
+						insurerId: vars.sftpRequest.sftpUserRequest.insurerId,
+						daId: vars.sftpRequest.sftpUserRequest.daId,
+						siteNbr: $.siteId}]]>
+				</ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="a61482b1-c1fb-4399-a6dc-7495502bef27" name="startDurationLogSubFlow" />
+		<db:bulk-insert doc:name="CreateSiteDetail" doc:id="b755cdf2-66d9-4d8e-bb65-fdbce34b1f45" config-ref="azureSqlDatabaseConfig">
+			<error-mapping sourceType="DB:QUERY_EXECUTION" targetType="APP:DB_BAD_REQUEST"/>
+			<db:sql><![CDATA[${db.query.insert.siteDetail}]]></db:sql>
+		</db:bulk-insert>
+		<flow-ref doc:name="EndDurationLog" doc:id="7230af2b-cbbe-453d-b1d9-54177079ce0a" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="AdminSftpUserRes" doc:id="541fa4fe-5de0-4f3b-a608-64f1b33c731c">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					message: 'User Created Successfully']]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="f79d5b9e-21d1-4466-b952-c33fb3884432" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- INITIALIZE SITE DETAILS TVP SUB FLOW -->
+	<sub-flow name="siteDetailsTvpSubFlow" doc:id="4c2f65b9-cd18-4639-9085-e1fd6c008432">
+		<ee:transform doc:name="tvpTable" doc:id="35a41adc-7ed1-406f-8043-f79da009c90f">
+			<ee:variables>
+				<ee:set-variable variableName="tvpSiteDetails"><![CDATA[%dw 2.0
+					output application/java
+					---
+					{
+						tvpName: "SITE_DETAILS_TYPE"
+					} as Object {
+						class: "com.microsoft.sqlserver.jdbc.SQLServerDataTable"
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<java:invoke doc:name="InsurerIdColumn" doc:id="28074519-4de9-4bc8-8e5f-43c86fc6751f" method="addColumnMetadata(String,int)" class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpSiteDetails]">
+			<java:args><![CDATA[#[{arg0: "INSURER_ID", arg1: 1}]]]></java:args>
+		</java:invoke>
+		<java:invoke doc:name="DaIdColumn" doc:id="f08739d0-8898-47d4-ac75-bf2d39c66200" method="addColumnMetadata(String,int)" class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpSiteDetails]">
+			<java:args><![CDATA[#[{arg0: "DA_ID", arg1: 12}]]]></java:args>
+		</java:invoke>
+		<java:invoke doc:name="OptionTyColumn" doc:id="50900f45-8c85-4dc0-892d-40271806206b" method="addColumnMetadata(String,int)" class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpSiteDetails]">
+			<java:args><![CDATA[#[{arg0: "OPTION_TY", arg1: 1}]]]></java:args>
+		</java:invoke>
+		<java:invoke doc:name="PhaseTyColumn" doc:id="57ae552c-5f17-4f8c-9789-33ed5849f4fe" method="addColumnMetadata(String,int)" class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpSiteDetails]">
+			<java:args><![CDATA[#[{arg0: "PHASE_TY", arg1: 1}]]]></java:args>
+		</java:invoke>
+		<java:invoke doc:name="SiteNbrColumn" doc:id="5fbbe4f2-c002-4f31-92f9-02ff75e2c888" method="addColumnMetadata(String,int)" class="com.microsoft.sqlserver.jdbc.SQLServerDataTable" instance="#[vars.tvpSiteDetails]">
+			<java:args><![CDATA[#[{arg0: "SITE_NBR", arg1: 12}]]]></java:args>
+		</java:invoke>
+	</sub-flow>
+
+	<sub-flow name="createVrmManagementSubFlow" doc:id="a9efe166-de78-4b8d-831a-67dc05277ffb">
+		<ee:transform doc:name="Entity" doc:id="6cf70769-14f8-4186-8087-8ae8f43cafa8">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'createVrmManagement']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.enquiry')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiRequest" ><![CDATA[%dw 2.0
+					output application/json
+					---
+					payload]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="d340313f-75c7-418e-8c87-a75152e8282f" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="5f57f910-c889-4181-92dd-fd6ab6bec274" name="userDetailsSubFlow" target="userIdDetails" />
+		<!-- LOGIC OF UPDATING/ADDING VRM BLOCK UNBLOCK -->
+		<db:select doc:name="VrmCheck" doc:id="c63f3c48-c919-42ec-a75b-5491078476e1" config-ref="azureSqlDatabaseConfig" target="vrmResultSet">
+			<db:sql><![CDATA[${db.query.select.vrmsCheck}]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{vrm : payload.vrmManagementRequest.vrm}]]]> </db:input-parameters>
+		</db:select>
+		<ee:transform doc:name="orgId" doc:id="46adf7b4-2eb9-4ad5-92c1-67ba3ef8e2b8">
+			<ee:variables>
+				<ee:set-variable variableName="orgId"><![CDATA[
+					output application/java
+					var query = p('db.query.select.orgId')
+					var orgId = "'" ++ (payload.vrmManagementRequest.organisationId joinBy  (",") replace ',' with("','")) ++ "'"
+					---
+					(query replace ':orgId' with(orgId))]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<db:select doc:name="OrgId" doc:id="36faa95c-5c46-4b65-96cb-c1fe91a16ffd" config-ref="azureSqlDatabaseConfig" target="orgIdResultSet">
+			<db:sql><![CDATA[#[vars.orgId]]]></db:sql>
+		</db:select>
+		<choice doc:name="VrmOrgNameExists" doc:id="11aca326-6e53-4655-b3d0-bb890fce9688">
+			<when expression="#[(!isEmpty(vars.vrmResultSet.VEHICLE_REG_MARK)) and (!isEmpty(vars.vrmResultSet.ORG_ID))]">
+				<raise-error doc:name="VrmOrgNameExists" doc:id="a240e1bf-0149-4cad-9bc9-51b77a940fd6" type="APP:INVALID_REQUEST" description="VRM and the Organisation combination already exists" />
+			</when>
+		</choice>
+		<ee:transform doc:name="CreateVmRequest" doc:id="e4000404-057b-4bbb-a686-efc3ca8e1c5d">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					import dateTimeSqlConversion from dwl::modules
+					output application/java
+					var createdBy = vars.userIdDetails[?(lower($.userName) == lower(vars.userId))][0].userId
+					var createdOn = dateTimeSqlConversion(now() >> 'Europe/London')
+					var orgIds = vars.orgIdResultSet
+					---
+					orgIds map ((item, index) -> {
+						vrm: payload.vrmManagementRequest.vrm,
+						orgId: item.org_id,
+						//orgType: payload.vrmManagementRequest.organisationType joinBy "|",
+						//orgName: payload.vrmManagementRequest.organisationName joinBy "|",
+						status: payload.vrmManagementRequest.status joinBy "|",
+						note: payload.vrmManagementRequest.note,
+						createdBy: createdBy,
+						createdOn: createdOn})]]>
+				</ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="9349a615-0761-43da-a772-046e50a827a8" name="startDurationLogSubFlow" />
+		<db:bulk-insert doc:name="AddVrm" doc:id="d5c57d54-8ae8-4d8b-a469-595c3c7539d0" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.insert.vrm}]]></db:sql>
+		</db:bulk-insert>
+		<flow-ref doc:name="EndDurationLog" doc:id="1e2e3e29-84b6-468e-af45-2ba23c9fd869" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="AdminVrmManagementRes" doc:id="9e089515-c76a-49f2-bdb4-6fef8e63db98">
+			<ee:message>
+				<ee:set-payload resource="dwl/admin/createVrmRes.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="cd7deca5-c6c7-4151-8813-bf51f507d377" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="updateVrmManagementSubFlow" doc:id="bfdfb486-ee5a-4f1e-8b17-3f66987a2138">
+		<ee:transform doc:name="Entity" doc:id="fe5a58d4-9854-42c2-b47f-84854d2da768">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'updateVrmManagement']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.enquiry')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiRequest" ><![CDATA[%dw 2.0
+					output application/json
+					---
+					payload]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="67cf4308-8828-4c3c-b8d1-f54201966c6f" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="3f70ce21-8a81-4272-befd-2566ffb07592" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="orgId" doc:id="4b581e24-1571-494e-9d45-3be634b3454d">
+			<ee:variables>
+				<ee:set-variable variableName="orgId"><![CDATA[
+					output application/java
+					var query = p('db.query.select.orgId')
+					var orgId = "'" ++ (payload.vrmManagementRequest.organisationId joinBy  (",") replace ',' with("','")) ++ "'"
+					---
+					(query replace ':orgId' with(orgId))]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<db:select doc:name="OrgId" doc:id="3cad298c-4a2c-443d-b2ad-728381b8efef" config-ref="azureSqlDatabaseConfig" target="orgIdResultSet">
+			<db:sql><![CDATA[#[vars.orgId]]]></db:sql>
+		</db:select>
+		<choice doc:name="Choice" doc:id="25f9fff6-3051-4f94-a21d-219dfac3bd47">
+			<when expression="#[(!isEmpty(vars.orgIdResultSet)) or (!isBlank(vars.orgIdResultSet[0].ORG_ID))]">
+				<flow-ref doc:name="VrmAudit" doc:id="492ec6bc-f730-4f5b-936e-a66650ce520e" name="VrmAuditSubFlow" />
+				<flow-ref doc:name="DeleteVrm" doc:id="c157a20b-cb3e-4985-acd1-38446d0fcdf2" name="DeleteVrmSubFlow" />
+				<!-- NOTE: dateChangeCount expression below was cut off at the right margin in the source screenshot and needs re-verification in Studio -->
+				<ee:transform doc:name="UpdateVmRequest" doc:id="96ef0afb-a77c-4b2f-b562-fd7188db43d4">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+							import dateTimeSqlConversion from dwl::modules
+							output application/java
+							var updatedBy = vars.userIdDetails[?(lower($.userName) == lower(vars.userId))][0].userId
+							var updatedOn = dateTimeSqlConversion(now() >> 'Europe/London')
+							var orgIds = vars.orgIdResultSet
+							var vrm = vars.vrmOrgIdResultSet
+							var currentdate = dateTimeSqlConversion(now() >> 'Europe/London')
+							---
+							orgIds map ((item, index) -> {
+								vrm: vars.apiRequest.vrmManagementRequest.vrm,
+								orgId: item.org_id,
+								status: vars.apiRequest.vrmManagementRequest.status joinBy "|",
+								note: vars.apiRequest.vrmManagementRequest.note,
+								updatedOn: updatedOn,
+								updatedBy: updatedBy,
+								dateChangeCount: if((vrm.UPDATED_ON == null or vrm.UPDATED_ON == '') and currentdate != vrm.CREATED_ON) (vrm[0].DATE_CHANGE_COUNT + 1) else vrm[0].DATE_CHANGE_COUNT})]]>
+						</ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="StartDurationLog" doc:id="f571bb5b-bfc2-4375-9534-f11ce088b2ea" name="startDurationLogSubFlow" />
+				<db:bulk-insert doc:name="UpdateVrm" doc:id="c6f61247-b621-48b8-8510-af46ad9f91f9" config-ref="azureSqlDatabaseConfig">
+					<db:sql><![CDATA[${db.query.insert.vrmupdate}]]></db:sql>
+				</db:bulk-insert>
+				<flow-ref doc:name="EndDurationLog" doc:id="0f27e0f4-0199-4d25-85a7-63c69277c817" name="endDurationLogSubFlow" />
+				<ee:transform doc:name="AdminVrmManagementRes" doc:id="382ac184-e04d-40f0-8d6a-3f12a85a9a93">
+					<ee:message>
+						<ee:set-payload resource="dwl/admin/updateVrmRes.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<raise-error doc:name="Invalid OrgName" doc:id="3cd0b025-d665-435a-9e10-89ae46b3a978" type="APP:INVALID_ORGNAME" description="There has been an error with the organisation name" />
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="ResLog" doc:id="d2042dab-28ae-4629-ad28-e726f23750f3" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="VrmAuditSubFlow" doc:id="c5c918dd-a582-42e0-885a-1f040670e7ac">
+		<ee:transform doc:name="orgId" doc:id="1ae3f5d0-3556-4385-a2f0-fb2ffd49c70e">
+			<ee:variables>
+				<ee:set-variable variableName="vrmOrgId" ><![CDATA[
+					output application/java
+					var query = p('db.query.select.vrmOrgId')
+					var vrm =  "'" ++ (payload.vrmManagementRequest.vrm) ++ "'" replace ',' with("','")
+					---
+					query replace ':vrm' with(vrm)]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<db:select doc:name="OrgId" doc:id="10c320d6-3ae6-4c4b-a266-39873e992c30" config-ref="azureSqlDatabaseConfig" target="vrmOrgIdResultSet">
+			<db:sql><![CDATA[#[vars.vrmOrgId]]]></db:sql>
+		</db:select>
+		<ee:transform doc:name="VmRequest" doc:id="23799e7d-edf0-46d5-ad13-bddc5ed4b04e" >
+			<ee:message>
+				<ee:set-payload ><![CDATA[%dw 2.0
+					import dateTimeSqlConversion from dwl::modules
+					output application/java
+					var updatedBy = vars.userIdDetails[?(lower($.userName) == lower(vars.userId))][0].userId
+					var updatedOn = dateTimeSqlConversion(now() >> 'Europe/London')
+					---
+					vars.vrmOrgIdResultSet map ((item, index) -> {
+						vrm: item.VEHICLE_REG_MARK,
+						orgId: item.ORG_ID,
+						status: item.STATUS,
+						note: item.NOTE,
+						updatedOn: updatedOn,
+						updatedBy: updatedBy,
+						createdBy: item.CREATED_BY,
+						createdOn: item.CREATED_ON,
+						dateChangeCount: item.DATE_CHANGE_COUNT})]]>
+				</ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="00477012-1c26-47d3-80fe-37b347c410da" name="startDurationLogSubFlow" />
+		<db:bulk-insert doc:name="AddVrm" doc:id="517f962d-b4e7-46bb-bc29-1cc80a8575cb" config-ref="azureSqlDatabaseConfig" target="audit">
+			<db:sql><![CDATA[${db.query.insert.vrmAudit}]]></db:sql>
+		</db:bulk-insert>
+		<flow-ref doc:name="EndDurationLog" doc:id="884f21f2-edc7-41e0-99cc-d66e33299f6a" name="endDurationLogSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="DeleteVrmSubFlow" doc:id="800dc443-d506-47bc-ad9e-c355edcfe0b6" >
+		<flow-ref doc:name="StartDurationLog" doc:id="819b664c-0b7e-41ba-8c37-2dcbfb524df" name="startDurationLogSubFlow" />
+		<db:delete doc:name="DeleteVrm" doc:id="39baec7c-1ae8-45ee-8e9f-430081dcf72a" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.delete.deleteVrm}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				vrm : vars.apiRequest.vrmManagementRequest.vrm}]]]>
+			</db:input-parameters>
+		</db:delete>
+		<flow-ref doc:name="EndDurationLog" doc:id="4aad3e6d-8cc6-4dc2-a461-64fca546735f" name="endDurationLogSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="getAdminVrmManagementSubFlow" doc:id="8a5047e0-8e8d-4f86-9dea-878cfd72df93">
+		<ee:transform doc:name="Entity" doc:id="8af050e7-668b-42ea-bacc-13ace149719e">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'getVrmManagement']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.enquiry')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<!-- NOTE: endDate expression below was cut off at the right margin in the source screenshot and needs re-verification in Studio -->
+				<ee:set-variable variableName="vrmSearchParams" ><![CDATA[%dw 2.0
+					import dateTimeToDateConversion from dwl::modules
+					output application/json
+					var status = attributes.queryParams.*filterByStatus map "$" joinBy ","
+					var orgType = attributes.queryParams.*filterByOrgType map "$" joinBy ","
+					---
+					{
+						sortBy: attributes.queryParams.*sortBy,
+						sortType: attributes.queryParams.sortType,
+						filterByStatus: if(!isEmpty(attributes.queryParams.filterByStatus)) status else null,
+						filterByOrgType: if(!isEmpty(attributes.queryParams.filterByOrgType)) orgType else null,
+						messageQuery: attributes.queryParams.messageQuery,
+						startDate: dateTimeToDateConversion(attributes.queryParams.startDateTime),
+						endDate: if (!isBlank(attributes.queryParams.endDateTime)) dateTimeToDateConversion(attributes.queryParams.endDateTime) else dateTimeToDateConversion(attributes.queryParams.startDateTime)
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="d1c1654e-3646-487d-9f43-167a65eb1448" name="commonLoggingEntrySubFlow" />
+		<validation:is-not-null doc:name="UserId" doc:id="797c208c-3451-4945-9218-1db381ad29b2" message="'userId' Header parameter is required" value="#[vars.userId]" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="33483ead-d7d7-4ecb-b946-03f8785013a1" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="sqlVars" doc:id="fafd0a2c-e60c-4cb3-b3a0-36df99d40017" >
+			<ee:variables>
+				<ee:set-variable variableName="vrmQp" ><![CDATA[%dw 2.0
+					import sortQuery from dwl::modules
+					output application/java
+					var filterBy = ([] + (vars.vrmSearchParams.filterByStatus)+(vars.vrmSearchParams.filterByOrgType)) filter $!= null
+					var sortBy = if (!isEmpty(vars.vrmSearchParams.sortBy)) (vars.vrmSearchParams.sortBy) else []
+					var sortType = if (!isBlank(vars.vrmSearchParams.sortType)) (upper(vars.vrmSearchParams.sortType)) else 'DESC'
+					---
+					{
+						sortQuery: if(!isEmpty(sortBy)) sortQuery(sortBy,sortType,'adminVrmManagement') else null,
+						filterBy: if(!isEmpty(filterBy)) (filterBy joinBy " AND ") else null
+					}]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="d69bf1db-c985-4c6f-abf3-aa94f0b616b8" name="startDurationLogSubFlow" />
+		<db:stored-procedure doc:name="VrmSearch" doc:id="2cd2262f-dc71-468f-8303-eef05bf97e92" config-ref="azureSqlDatabaseConfig" >
+			<db:sql><![CDATA[${db.query.sp.vrmSearch}]]></db:sql>
+			<db:input-parameters ><![CDATA[#[output application/java
+				---
+				{
+					USER_NAME: vars.userId,
+					SEARCH_IND: if (!isBlank(vars.vrmSearchParams.messageQuery)) 1 else 0,
+					KEYWORDSEARCH: vars.vrmSearchParams.messageQuery default null,
+					SORTING_IND: if (!isBlank(vars.vrmQp.sortQuery)) 1 else 0,
+					SORT_COLUMNS: vars.vrmQp.sortQuery default null,
+					FILTER_ORG_TY_IND: if (!isBlank(vars.vrmSearchParams.filterByOrgType)) 1 else 0,
+					ORG_TY: vars.vrmSearchParams.filterByOrgType default null,
+					FILTER_STATUS_IND: if (!isBlank(vars.vrmSearchParams.filterByStatus)) 1 else 0,
+					STATUS: vars.vrmSearchParams.filterByStatus default null,
+					FILTER_DATE_IND: if ( (!isBlank(vars.vrmSearchParams.startDate)) and (!isBlank(vars.vrmSearchParams.endDate)) ) 1 else 0,
+					FROM_DATE: vars.vrmSearchParams.startDate,
+					END_DATE: vars.vrmSearchParams.endDate,
+					OFFSET: vars.pagination.offset - 1,
+					LIMIT: vars.pagination.limit
+				}]]]>
+			</db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="6987b9ef-7396-4c69-a50c-58987c9cce15" name="endDurationLogSubFlow" />
+		<ee:transform doc:name="vrmSearchRes" doc:id="d8f3d15e-7c4f-4381-aae4-dce9ba98aabe" >
+			<ee:message >
+				<ee:set-payload resource="dwl/admin/vrmSearchRes.dwl" />
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="c61199aa-116a-486b-8e49-c09db8dc7a89" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="updateAdminUserDetailsSubFlow" doc:id="7a73e980-0a1e-4f52-8c4b-55b543cad3ca" >
+		<ee:transform doc:name="Entity" doc:id="179c1283-d993-43a6-889c-746058410167" >
+			<ee:variables>
+				<ee:set-variable variableName="entity" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					'updateAdminUser']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.userprofile')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId') ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiRequest" ><![CDATA[%dw 2.0
+					output application/json
+					---
+					payload]]>
+				</ee:set-variable>
+				<!-- NOTE: isSftp expression below was cut off at the right margin in the source screenshot and needs re-verification in Studio -->
+				<ee:set-variable variableName="isSftp"><![CDATA[%dw 2.0
+					output application/json
+					---
+					(!isBlank(payload.adminUserUpdateRequest.userType)) and (payload.adminUserUpdateRequest.userType == 'SFTP') and
+					( (!isBlank(payload.adminUserUpdateRequest.insurerId)) or (!isBlank(payload.adminUserUpdateRequest.daId)) ) and ( (!isEmpty(payload.clientAppRequest.siteDetails)) )]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userName" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.uriParams.'userId']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="38099c3c-f9b4-44c1-9147-4bb767a36848" name="commonLoggingEntrySubFlow" />
+		<validation:is-true doc:name="Is true" doc:id="37d3e2f7-ec3a-4530-87f2-0ab54fa13222" expression="#[!isEmpty(payload.adminUserUpdateRequest)]" message="Invalid Request"/>
+		<flow-ref doc:name="CheckUserDetails" doc:id="87103d82-5ffc-44dc-9e6f-bc26290dab49" name="userDetailsSubFlow" target="userIdDetails" />
+		<choice doc:name="isApiOrSftp">
+			<when expression="#[vars.isSftp default false]">
+				<ee:transform doc:name="DynamicQuery" doc:id="af4dd3d4-2fa1-4d9e-a11e-a4a3ad619ebb">
+					<ee:variables>
+						<ee:set-variable variableName="updateAdminUserQuery"><![CDATA[%dw 2.0
+							output application/java
+							var userQuery = p('db.query.update.adminUserDetails')
+							var userSiteMapQuery = p('db.query.update.userSiteMapDetails')
+							var siteDetailQuery = p('db.query.update.siteDetails')
+							---
+							payload ]]>
+						</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="StartDurationLog" doc:id="7bcc2460-406b-4a2e-98fa-b12e9de1a958" name="startDurationLogSubFlow" />
+				<db:execute-script doc:name="UpdateAdminUser" doc:id="e391b167-fe62-4cfb-92e0-7296d865dcea" config-ref="azureSqlDatabaseConfig">
+					<db:sql><![CDATA[#[vars.updateAdminUserQuery]]]></db:sql>
+				</db:execute-script>
+				<flow-ref doc:name="EndDurationLog" doc:id="4dfa4eee-ac80-4837-8a22-30db46e4f064" name="endDurationLogSubFlow" />
+			</when>
+			<otherwise>
+				<ee:transform doc:name="DynamicQuery" doc:id="dc14432f-d2c1-4476-a0ff-b4c52b75bb89">
+					<ee:variables>
+						<ee:set-variable resource="dwl/admin/updateAdminUserQuery.dwl" variableName="updateAdminUserQuery" />
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="StartDurationLog" doc:id="22f250e9-e790-4d90-b87b-6f1114d0ff73" name="startDurationLogSubFlow" />
+				<db:update doc:name="UpdateAdminUser" doc:id="f25a6ff6-2457-44e1-8dc2-b7178cc506bd" config-ref="azureSqlDatabaseConfig">
+					<db:sql><![CDATA[#[vars.updateAdminUserQuery]]]></db:sql>
+					<db:input-parameters><![CDATA[ #[{ userId: vars.userName }]]]></db:input-parameters>
+				</db:update>
+				<flow-ref doc:name="EndDurationLog" doc:id="fca3b1cc-e39e-4c21-8ad3-2f5da694571c" name="endDurationLogSubFlow" />
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="UpdateAdminUserDetailsRes" doc:id="982a92b3-a59b-44ab-ad4c-9a4d2f0c5882" >
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					message: 'User Details Updated Successfully']]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="5333efd7-bf63-424c-a8f9-971ae728b6f1" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="migrationOktaLinkSubFlow" doc:id="a4deebeb-11be-4f95-b64a-896bef41d39a" >
+		<ee:transform doc:name="Entity" doc:id="b3ac7aa9-c19a-4006-a8ef-08ef6b53c713" >
+			<ee:variables>
+				<ee:set-variable variableName="entity" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					'migrationOktaLink']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName" ><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.systemapi.utility.okta')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					var userId = lower(attributes.headers.'userId')
+					---
+					if (userId == p('account.dummy.userId')) vars.clientId else userId ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="be337da2-8136-4943-8958-ba5413a6ce89" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="1597f728-236f-4b42-993c-c384614febf8" name="userDetailsSubFlow" target="userIdDetails" />
+		<vm:publish doc:name="Publish" doc:id="cd31f247-187b-4744-8570-fdf95b98c2e6" config-ref="vmConfig" sendCorrelationId="AUTO" queueName="oktaUsersMigrationQueue"/>
+		<ee:transform doc:name="OktaLinkRes" doc:id="b952dbdf-a1bf-4b44-90ce-dc585cf4dbb8" >
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+					output application/json
+					---
+					message: 'Send Accounts Okta Link Batch Initiated']]>
+				</ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="c275a17a-184d-4a90-94de-3aad9b91edf0" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<!-- MIGRATION OKTA LINK BATCH JOB -->
+	<flow name="migrationOktaLinkBatchFlow" doc:id="d7928c7b-fa72-419b-9f82-51de5e50ec39">
+		<vm:listener doc:name="MigrationOktaLinkUsers" doc:id="72ba26d7-e453-4111-9f59-8c7ed1edc198" queueName="oktaUsersMigrationQueue" config-ref="vmConfig"
+			numberOfConsumers="1" />
+		<ee:transform doc:name="Entity" doc:id="04fce7b4-cfc7-47f8-891a-4c3c1cfd990c">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'oktaUsersMigrationVMPublish']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<db:select doc:name="OktaUserDetails" doc:id="e30f0900-8b4e-45e6-ad49-4440d46db017" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.select.usersMigrationOktaLink}]]></db:sql>
+		</db:select>
+		<batch:job jobName="createOktaMigrationUsersJob" doc:id="242a3a05-97c9-423a-acd7-f915e20175cf" maxFailedRecords="${batch.maxFailed}"
+			blockSize="${batch.blockSize}" maxConcurrency="${batch.maxConcurrency}" schedulingStrategy="ORDERED_SEQUENTIAL">
+			<batch:process-records>
+				<batch:step name="CreateOktaUser" doc:id="15f68445-6614-48df-88f0-7b6937ec0fb6">
+					<ee:transform doc:name="OktaRequest" doc:id="00239e1f-2fca-480d-84be-6833255b827b">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+								output application/json
+								---
+								{
+									oktaAccountRequest: {
+										firstName: payload.FIRST_NAME,
+										lastName: payload.SURNAME default payload.FIRST_NAME,
+										email: payload.USER_NAME,
+										(phoneNumber: payload.CONTACT_TEL) if (!isBlank(payload.CONTACT_TEL))
+									}
+								}]]>
+							</ee:set-payload>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="systemapi"><![CDATA[%dw 2.0
+								output application/java
+								---
+								{
+									host: p('secure::systemapi.utility.host'),
+									port: p('secure::systemapi.utility.port'),
+									basePath: p('systemapi.utility.basePath') default '',
+									entityPath: p('systemapi.utility.path.okta.createUser'),
+									clientId: p('secure::systemapi.utility.clientId'),
+									clientSecret: p('secure::systemapi.utility.clientSecret')
+								}]]>
+							</ee:set-variable>
+							<ee:set-variable variableName="httpMethod"><![CDATA[%dw 2.0
+								output application/java
+								---
+								'POST']]>
+							</ee:set-variable>
+							<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+								output application/java
+								---
+								p('external.systemapi.utility.okta')]]>
+							</ee:set-variable>
+							<ee:set-variable variableName="dbRequest"><![CDATA[%dw 2.0
+								output application/java
+								---
+								payload ]]>
+							</ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<try>
+						<flow-ref doc:name="SystemApiCall" doc:id="54d3b2d8-8adf-4efb-93a7-cfeaf67bc315" name="systemApiCallSubFlow" />
+						<error-handler>
+							<on-error-continue type="HTTP:BAD_REQUEST" enableNotifications="true">
+								<ee:transform doc:name="MsgLog" doc:id="5c956c14-683b-4d3f-9537-726d3c01987e">
+									<ee:variables>
+										<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+											output application/java
+											---
+											'USER ALREADY EXISTS IN OKTA : ' ++ vars.dbRequest.USER_NAME ++ ' - ADD NAVIGATE GROUP']]>
+										</ee:set-variable>
+										<ee:set-variable variableName="isExistingOktaUser"><![CDATA[%dw 2.0
+											output application/java
+											---
+											true]]>
+										</ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+								<flow-ref doc:name="MsgLog" doc:id="c38282bb-a722-4928-a67e-84609a8ed843" name="commonLoggingMessageSubFlow" />
+							</on-error-continue>
+						</error-handler>
+					</try>
+					<choice doc:name="isExistingOktaUser" doc:id="744e56c0-c75e-4769-9b11-e5e1247b9c32">
+						<when expression="#[(vars.isExistingOktaUser default false)]">
+							<!-- ADD NAVIGATE GROUP TO THE EXISTING OKTA USER -->
+							<try>
+								<ee:transform doc:name="NavigateGroupReq" doc:id="afa4b2ba-34ca-4845-a14f-2d172cfbbb16">
+									<ee:variables>
+										<ee:set-variable variableName="systemapi"><![CDATA[%dw 2.0
+											output application/java
+											---
+											{
+												host: p('secure::systemapi.utility.host'),
+												port: p('secure::systemapi.utility.port'),
+												basePath: p('systemapi.utility.basePath') default '',
+												entityPath: (p('systemapi.utility.path.okta.addGroupToUser')) replace '{userId}' with(vars.dbRequest.USER_NAME),
+												clientId: p('secure::systemapi.utility.clientId'),
+												clientSecret: p('secure::systemapi.utility.clientSecret')
+											}]]>
+										</ee:set-variable>
+										<ee:set-variable variableName="httpMethod"><![CDATA[%dw 2.0
+											output application/java
+											---
+											'PUT']]>
+										</ee:set-variable>
+										<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+											output application/java
+											---
+											p('external.systemapi.utility.okta')]]>
+										</ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+								<flow-ref doc:name="SystemApiCall" doc:id="8bf3f179-95bc-48ca-9957-d801bef122ea" name="systemApiCallSubFlow" />
+								<error-handler>
+									<on-error-continue type="ANY" enableNotifications="true">
+										<ee:transform doc:name="MsgLog" doc:id="f1d44a19-ae83-4d8f-a797-6f7a72dcdb89">
+											<ee:variables>
+												<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+													output application/java
+													---
+													'USER ALREADY ADDED TO NAVIGATE GROUP : ' ++ vars.dbRequest.USER_NAME ]]>
+												</ee:set-variable>
+											</ee:variables>
+										</ee:transform>
+										<flow-ref doc:name="MsgLog" doc:id="d47ddf13-0644-4716-9864-58440f0a773d" name="commonLoggingMessageSubFlow" />
+									</on-error-continue>
+								</error-handler>
+							</try>
+						</when>
+					</choice>
+				</batch:step>
+				<batch:step name="UpdateOktaMigInd" doc:id="87194a48-db76-4e45-9765-e7c4613ab49e" acceptPolicy="NO_FAILURES">
+					<ee:transform doc:name="SetPayload" doc:id="c5f81457-0a72-407d-bf3a-21cd54d9fd25">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+								output application/java
+								---
+								{
+									USER_ID : vars.dbRequest.USER_ID
+								}]]>
+							</ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<batch:aggregator size="10000" doc:name="UpdateOktaMigInd" preserveMimeTypes="true">
+						<ee:transform doc:name="DynamicQuery" doc:id="f4bcc09c-4d88-4db8-8bbc-fa3a03807181">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+									output application/java
+									var query = p('db.query.update.userOktaMigrationFlag')
+									var userIds = payload.USER_ID joinBy ","
+									---
+									query replace ':userIds' with(userIds) ]]>
+								</ee:set-payload>
+							</ee:message>
+						</ee:transform>
+						<db:update doc:name="OktaMigInd" doc:id="67edd4c5-0c20-48ca-8938-44646554400c" config-ref="azureSqlDatabaseConfig">
+							<db:sql><![CDATA[#[payload]]]></db:sql>
+						</db:update>
+					</batch:aggregator>
+				</batch:step>
+				<batch:step name="Failure" doc:id="678f944b-ba1e-4594-abaa-e2ca5f01abd9" acceptPolicy="ONLY_FAILURES">
+					<ee:transform doc:name="SetPayload" doc:id="95bbdae2-a76f-46de-93a7-78c8f98f411f">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+								output application/json
+								---
+								payload ++ { errorDescription: write(Batch::getLastException(),'application/java') }]]>
+							</ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<batch:aggregator size="10000" doc:name="Failures" preserveMimeTypes="true">
+						<ee:transform doc:name="FailedRecords" doc:id="3aa29ee3-f674-4d14-a5db-ee4fe14d9294">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+									output application/json
+									---
+									Failed: payload map {
+										EmailId: $.EMAIL_ADDRESS,
+										ErrorDescription: $.errorDescription
+									}]]>
+								</ee:set-payload>
+							</ee:message>
+						</ee:transform>
+						<ee:transform doc:name="BatchEmailReq" doc:id="aea5a5c9-b2a5-455a-9823-51a717fb229b">
+							<ee:message>
+								<ee:set-payload resource="dwl/admin/batchEmailReq.dwl"/>
+							</ee:message>
+						</ee:transform>
+						<flow-ref doc:name="SendEmailProcess" doc:id="ee655857-62f3-4bef-8744-2e25d509d087" name="sendEmailSubFlow" />
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete>
+				<ee:transform doc:name="BatchStatus" doc:id="bd0902d2-bc40-4c64-8216-816b12c6e179">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+							output application/json skipNullOn = "everywhere"
+							var muleEnv = if ( p('mule_env') == 'prod' ) '' else ' - ' ++ p('mule_env')
+							---
+							emailRequest: {
+								fromName: p('email.adminBatch.fromName'),
+								fromAddress: p('email.adminBatch.fromAddress'),
+								toAddress: (p('email.adminBatch.toAddress')) splitBy "," default [],
+								ccAddress: [],
+								bccAddress: [],
+								subject: (p('email.adminBatch.subject') ++ muleEnv) default null,
+								bodyText: write(payload, "application/json") default null,
+								bodyMimeType: p('email.adminBatch.bodyMimeType') default 'text/plain'
+							}]]>
+						</ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="SendEmailProcess" doc:id="fa064844-acdb-4f10-aee4-b0e023b7c335" name="sendEmailSubFlow" />
+				<flow-ref doc:name="MsgLog" doc:id="0fb8dd5c-840d-4235-b07d-475265f71071" name="commonLoggingMessageSubFlow" />
+			</batch:on-complete>
+		</batch:job>
+	</flow>
+
+</mule>
