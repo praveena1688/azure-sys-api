@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+	http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+	http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+	http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+	http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+	http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+	<flow name="accountNotificationStatusFlow" doc:id="97f8f736-0e6f-415a-8fb5-c00a2b4a1052" >
+		<scheduler doc:name="AccountNotificationStatus" doc:id="8a803d29-55f4-4fdd-88b0-a2fe4a018a7d">
+			<scheduling-strategy>
+				<fixed-frequency frequency="${scheduler.notify.frequency}" startDelay="${scheduler.notify.startDelay}" timeUnit="MINUTES" />
+			</scheduling-strategy>
+		</scheduler>
+		<ee:transform doc:name="Entity" doc:id="ce803768-643f-4b8c-ae58-766b9c94ea26">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'accountNotificationStatusVMPublish']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<vm:publish doc:name="Publish" doc:id="5b1b4ab7-4c8f-41e4-bb84-f16a6ca78437" config-ref="vmConfig" sendCorrelationId="AUTO" queueName="accountNotificationStatusQueue"/>
+		<ee:transform doc:name="LogMsg" doc:id="1fa10094-312e-4614-bd61-5081290c67c0">
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="b8c9c6c4-37a0-474d-afb7-7ba46bc5c324" name="commonLoggingExitSubFlow" />
+	</flow>
+
+	<!-- NOTIFICATION STATUS PROCESS FLOW -->
+	<flow name="accountNotificationStatusProcessFlow" doc:id="d18cefba-1df0-4ca9-b2e5-d7630fe5aeaf" >
+		<vm:listener doc:name="NotificationStatus" doc:id="cb4d3a9d-3150-43e1-a76a-34670da8d632" queueName="accountNotificationStatusQueue" config-ref="vmConfig"
+			numberOfConsumers="1" />
+		<ee:transform doc:name="Entity" doc:id="3dfe5206-2ab0-4db8-96d0-9df712d45461">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'accountNotificationStatusProcess']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="txnId"><![CDATA[%dw 2.0
+					output application/json
+					---
+					(now() >> 'Europe/London') as LocalDateTime {format: "yyyyMMddHHmmss"}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'Scheduler - Account Notification Status']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.comms')]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="cd200836-346f-445c-a0ef-84ad02598c40" name="commonLoggingEntrySubFlow" />
+		<foreach doc:name="For Each Account Notification Status" doc:id="7ca65d2b-de28-4e5d-b574-33970ae4c740"
+			collection="#[splitBy(p('account.notifications.schedulerStatus'),',')]">
+			<try>
+				<flow-ref doc:name="StartDurationLog" doc:id="8e5db81a-6f50-4542-9d61-dd55902274fe" name="startDurationLogSubFlow" />
+				<ee:transform doc:name="SetLogVars" doc:id="b3d83d9a-5dbe-4af8-9308-e64e90611155">
+					<ee:variables>
+						<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+							output application/java
+							---
+							{ Status: payload }]]>
+						</ee:set-variable>
+						<ee:set-variable variableName="notifyStatus"><![CDATA[%dw 2.0
+							output application/java
+							---
+							payload]]>
+						</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="MessageLog" doc:id="219235d8-a879-4cf6-8e2e-f9c041d97460" name="commonLoggingPayloadSubFlow" />
+				<choice doc:name="IsDeleteOperation" doc:id="62de894c-9b28-4285-926c-7390a65ba58f">
+					<when expression="#[(payload == 'Archived') or (payload == 'Deleted') or (payload == 'Draft')]">
+						<db:delete doc:name="AccountNotifications" doc:id="f5166b48-0152-4fc9-94a7-1a06afe24d10" config-ref="azureSqlDatabaseConfig">
+							<db:sql><![CDATA[#[p('db.query.delete.accountNotificationStatus' ++ payload)]]]></db:sql>
+						</db:delete>
+					</when>
+					<otherwise>
+						<db:insert doc:name="AccountAuditNotifications" doc:id="cc5ae7e1-5b10-4ae5-9e1b-adb50d9d2274" config-ref="azureSqlDatabaseConfig">
+							<db:sql><![CDATA[#[p('db.query.insert.accountNotificationsAudit' ++ vars.notifyStatus)]]]></db:sql>
+						</db:insert>
+						<db:update doc:name="AccountNotifications" doc:id="f05e4e8b-dd68-4a8a-98bc-8eddeffc3e89" config-ref="azureSqlDatabaseConfig">
+							<db:sql><![CDATA[#[p('db.query.update.accountNotificationStatus' ++ vars.notifyStatus)]]]></db:sql>
+						</db:update>
+					</otherwise>
+				</choice>
+				<flow-ref doc:name="EndDurationLog" doc:id="c57b65d3-66d2-4270-9cf0-130470108414" name="endDurationLogSubFlow" />
+				<error-handler>
+					<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="6a1494d7-9965-4c21-9c3b-a33e14063b23">
+						<flow-ref doc:name="ErrorLog" doc:id="32de10b1-39e1-4cdc-bd2b-e8c5b9d6081f" name="commonLoggingErrorSubFlow" />
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</foreach>
+		<flow-ref doc:name="ResLog" doc:id="89d3b184-ae6e-44d9-9271-0ae25a1e66fe" name="commonLoggingExitSubFlow" />
+	</flow>
+
+</mule>
