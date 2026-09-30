@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <!-- FLOW/API ENTRY LOG -->
+    <sub-flow name="commonLoggingEntrySubFlow" doc:id="2c75f413-e403-4b1d-a384-c2a242fb20d0">
+        <logger level="INFO" message="ENTRY *** API Name: #[vars.apiName] *** Transaction ID: #[vars.txnId] *** URIParams: #[attributes.uriParams] *** QUERYParams: #[attributes.queryParams] *** Headers: #[attributes.headers] *** Message: #[vars.logMsg]" doc:name="EntryLog"/>
+        <flow-ref doc:name="ResetLogMsg" doc:id="7136c330-cbff-446a-905e-56637c3e782a" name="resetLogMsgSubFlow"/>
+    </sub-flow>
+
+    <!-- FLOW/API EXIT LOG -->
+    <sub-flow name="commonLoggingExitSubFlow" doc:id="640b24da-3236-4006-8917-6b5901af568e">
+        <logger level="INFO" message="EXIT *** API Name: #[vars.apiName] *** Transaction ID: #[vars.txnId] *** HTTP STATUS: #[vars.httpStatus] *** Message: #[vars.logMsg]" doc:name="ExitLog" />
+        <flow-ref doc:name="ResetLogMsg" doc:id="d28ec2dc-d318-42fc-bad8-00b038f07fe3" name="resetLogMsgSubFlow"/>
+    </sub-flow>
+
+    <!-- PAYLOAD LOG -->
+    <sub-flow name="commonLoggingPayloadSubFlow" doc:id="24453e6a-279c-4160-b687-7f4e89917abf" >
+        <logger level="INFO" doc:name="MsgLog" doc:id="72969b7b-1690-416e-8600-54e5c521d4d7" message="Transaction ID: #[vars.txnId] *** Message: #[vars.message default payload]"/>
+    </sub-flow>
+
+    <!-- MESSAGE LOG -->
+    <sub-flow name="commonLoggingMessageSubFlow" doc:id="742029dc-9296-48fe-ac73-bbc3885cca68" >
+        <logger level="INFO" doc:name="MsgLog" doc:id="d2d994d7-c6cb-45a1-a3ad-6682e4178e50" message="API Name: #[vars.apiName] *** Transaction ID: #[vars.txnId] *** Message: #[vars.message]"/>
+    </sub-flow>
+
+    <!-- START DURATION OF DOWNSTREAM SYSTEM LOG -->
+    <sub-flow name="startDurationLogSubFlow" doc:id="936b914f-368d-4dcd-9d42-152313325fa8">
+        <set-variable value="#[now()]" doc:name="TimeVars" doc:id="4b95b319-5893-4df7-908a-984cb0fa9bb2" variableName="startTimeLog"/>
+        <logger level="INFO" message="Downstream API Name: #[vars.extApiName] *** TransactionId: #[vars.txnId] " doc:name="StartLog"/>
+    </sub-flow>
+
+    <!-- END DURATION OF DOWNSTREAM SYSTEM LOG -->
+    <sub-flow name="endDurationLogSubFlow" doc:id="652d55e3-8357-43ef-9e84-ae2d21f7af74">
+        <logger level="INFO" message="TransactionId: #[vars.txnId] *** Downstream System: #[vars.extApiName] *** Duration of the Downstream Execution In Milliseconds: #[(now() - (vars.startTimeLog default now())) as Number {unit: 'milliseconds'}]" doc:name="ResLog"/>
+    </sub-flow>
+
+    <!-- ERROR LOG -->
+    <sub-flow name="commonLoggingErrorSubFlow" doc:id="f64c03df-cc87-4dcc-84fd-6245f80c1752" >
+        <logger level="ERROR" doc:name="ErrorLog" doc:id="39988ad7-7e04-46df-8b9d-4500b59d0a54" message="API Name: #[vars.apiName] *** Transaction ID: #[vars.txnId] *** Error Message: #[error] *** Error Payload: #[payload]"/>
+    </sub-flow>
+
+    <!-- RESET LOGMSG VARS -->
+    <sub-flow name="resetLogMsgSubFlow" doc:id="f35b8b67-ebcb-4119-bf94-16cca2ca6f7b" >
+        <set-variable value='#[""]' doc:name="ResetLogMsgVars" doc:id="b1a5d982-2233-40c3-aaff-39700d542f1e" variableName="logMsg"/>
+    </sub-flow>
+
+</mule>
