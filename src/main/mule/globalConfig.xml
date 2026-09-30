@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:azure-key-vault="http://www.mulesoft.org/schema/mule/azure-key-vault"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties" xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd
+http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/azure-key-vault http://www.mulesoft.org/schema/mule/azure-key-vault/current/mule-azure-key-vault.xsd">
+
+	<!-- HTTP LISTENER CONFIG -->
+	<http:listener-config name="httpListenerConfig">
+		<http:listener-connection host="${https.listener.host}" port="${https.port}" protocol="HTTPS" tlsContext="tlsContext"/>
+	</http:listener-config>
+
+	<!-- TLS CONFIG CONFIG -->
+	<tls:context name="tlsContext" doc:name="TLS Context" doc:id="1852e51a-350d-4749-b8d6-b2ec480c8544" enabledProtocols="TLSv1.2,TLSv1.3">
+		<tls:key-store type="pkcs12" path="${secure::https.listener.tls.keystore.path}" keyPassword="${secure::https.listener.tls.keystore.keyPassword}"
+			password="${secure::https.listener.tls.keystore.password}"/>
+	</tls:context>
+
+	<!-- API KIT CONFIG -->
+	<apikit:config name="azure-sys-api-config" api="azure-sys-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+
+	<!-- SECURE PROPERTY CONFIG -->
+	<configuration-properties doc:name="propertiesConfig" doc:id="1bf1f96b-3667-416f-9af1-8e4e2e5fd317" file="properties/common.yaml" />
+	<secure-properties:config name="securePropertiesConfig" doc:name="Secure Properties Config" doc:id="013fde23-9707-4fa4-b537-c4943226705a"
+		file="properties/${mule_env}.yaml" key="${enc.key}">
+		<secure-properties:encrypt algorithm="Blowfish" mode="CBC" />
+	</secure-properties:config>
+
+	<!-- AZURE KEY VAULT CONFIG -->
+	<!--
+	<azure-key-vault:config name="azureKeyVaultConfig" doc:name="Azure Key Vault Config" doc:id="659c33fe-9e31-4dc8-9669-bd8371d7fe5d" >
+		<azure-key-vault:connection clientId="${secure::keyvault.azure.clientId}" tenantId="${secure::keyvault.azure.tenantId}" clientSecret="${secure::keyvault.azure.clientSecret}">
+			<azure-key-vault:crypto-client-config cachedCryptoClientTtl="1" unit="DAYS" />
+		</azure-key-vault:connection>
+	</azure-key-vault:config>
+	-->
+
+	<!-- API AUTO DISCOVERY API -->
+	<api-gateway:autodiscovery apiId="${secure::api.id}" doc:name="apiAutodiscovery" doc:id="52840bd6-f9a7-46fb-8b7b-7c36b4faaa8f" flowRef="azure-sys-api-main" />
+
+	<!-- GLOBAL ERROR HANDLER -->
+	<configuration doc:name="errorConfig" doc:id="8eaa3373-1baf-4e02-9f26-9c24273a2fee" defaultErrorHandler-ref="apiErrorHandler" />
+
+	<!-- VM CONFIG -->
+	<vm:config name="vmConfig" doc:name="VM Config" doc:id="b24edbce-3460-4f5d-ae34-4e3a844edd1e">
+		<vm:queues>
+			<vm:queue queueName="accountNotificationStatusQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="batchNotificationQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="claimsAuditQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.claims.maxMsgQueue}" />
+			<vm:queue queueName="organisationQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="usersStatusEmailQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="usersStatusQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="usersReminderStatusQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="alertsMailStatusQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.alerts.maxMsgQueue}" />
+			<vm:queue queueName="contentQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="ovlEnquiryQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+			<vm:queue queueName="vrmQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.ovl.maxMsgQueue}" />
+			<vm:queue queueName="oktaUsersMigrationQueue" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxMsgQueue}" />
+		</vm:queues>
+	</vm:config>
+
+	<!-- OBJECT STORE CONFIG -->
+	<os:object-store name="cacheObjectStore" doc:name="Cache Object store" doc:id="8e89db0b-ac58-4cc0-820c-e68fdaad514a" maxEntries="${os.lookup.maxEntries}"
+		entryTtl="${os.lookup.ttl}" expirationInterval="${os.expirationInterval}" entryTtlUnit="MINUTES" persistent="false" />
+	<os:object-store name="apiUserObjectStore" doc:name="API User Object store" doc:id="0c79782f-375f-4084-be41-0e3b4009cf7b"
+		maxEntries="${os.user.api.maxEntries}" entryTtl="${os.user.api.ttl}" expirationInterval="${os.expirationInterval}" entryTtlUnit="MINUTES" persistent="false" />
+	<os:object-store name="portalUserObjectStore" doc:name="Portal User Object store" doc:id="2ee5d98a-204a-4445-954a-0f709f5c8179"
+		maxEntries="${os.user.portal.maxEntries}" entryTtl="${os.user.portal.ttl}" expirationInterval="${os.expirationInterval}" entryTtlUnit="MINUTES" persistent="false"/>
+
+	<!-- CACHE CONFIG -->
+	<ee:object-store-caching-strategy name="lookupCachingStrategy" doc:name="Caching Strategy" doc:id="842bedba-a2d9-41e0-9ed0-3f78e3f8a75e"
+		keyGenerationExpression="#[vars.cacheKey]" objectStore="cacheObjectStore" />
+	<ee:object-store-caching-strategy name="apiCachingStrategy" doc:name="API Caching Strategy" doc:id="31f6f8bd-52ff-43f1-8f11-5de7d741eec3"
+		keyGenerationExpression="#[vars.cacheKey]" objectStore="apiUserObjectStore" />
+	<ee:object-store-caching-strategy name="portalCachingStrategy" doc:name="Portal Caching Strategy" doc:id="d102866e-713d-4942-a593-80a03622450a"
+		keyGenerationExpression="#[vars.cacheKey]" objectStore="portalUserObjectStore" />
+
+	<!-- AZURE SQL DATABASE CONFIG -->
+	<!-- Any Additional Property (c3p0 pool/datasource property) that needs to set can be added under "additional-properties" -->
+	<db:config name="azureSqlDatabaseConfig" doc:name="Read Write Database Config" doc:id="a73884b4-973d-45b3-83af-040e883a5298" >
+		<db:mssql-connection host="${secure::db.azureSql.host}" port="${secure::db.azureSql.port}"
+			databaseName="${secure::db.azureSql.db}" user="${secure::db.azureSql.username}" useXaTransactions="true">
+			<reconnection failsDeployment="true">
+				<reconnect frequency="${retry.frequency}" count="${retry.count}" />
+			</reconnection>
+			<db:pooling-profile maxPoolSize="${db.pool.maxPoolSize}" minPoolSize="${db.pool.minPoolSize}" acquireIncrement="${db.pool.acquireIncrement}"
+				maxIdleTime="${db.pool.maxIdleTime}" maxWait="${db.pool.checkoutTimeout}" preparedStatementCacheSize="${db.pool.preparedStatementCacheSize}"
+				maxStatements="${db.pool.maxStatements}" testConnectionOnCheckout="false">
+				<db:additional-properties>
+					<db:additional-property key="preferredTestQuery" value="${db.query.preferredTestQuery}" />
+				</db:additional-properties>
+			</db:pooling-profile>
+			<db:connection-properties>
+				<!-- SERVICE PRINCIPALS AUTH -->
+				<!-- <db:connection-property key="Authentication" value="ActiveDirectoryServicePrincipal" /> -->
+				<!-- SYSTEM-ASSIGNED MANAGED IDENTITY AUTH -->
+				<!-- <db:connection-property key="Authentication" value="ActiveDirectoryMSI" /> -->
+				<!-- USER-ASSIGNED MANAGED IDENTITY AUTH -->
+				<db:connection-property key="Authentication" value="ActiveDirectoryMSI;msiClientId=${secure::db.azureSql.username}" />
+				<db:connection-property key="loginTimeout" value="${db.pool.loginTimeout}" />
+				<db:connection-property key="queryTimeout" value="${db.pool.queryTimeout}" />
+				<db:connection-property key="cancelQueryTimeout" value="${db.pool.cancelQueryTimeout}" />
+				<db:connection-property key="lockTimeout" value="${db.pool.lockTimeout}" />
+				<db:connection-property key="socketTimeout" value="${db.pool.socketTimeout}" />
+				<db:connection-property key="sendStringParametersAsUnicode" value="${db.pool.unicodeString}" />
+			</db:connection-properties>
+		</db:mssql-connection>
+	</db:config>
+
+	<!-- AZURE SQL DATABASE CONFIG -->
+	<!-- Any Additional Property (c3p0 pool/datasource property) that needs to set can be added under "additional-properties" -->
+	<db:config name="azureSqlDatabaseReadOnlyConfig" doc:name="Read Only Database Config" doc:id="909bdc5c-a569-4f0a-813e-403ff70cb41f" >
+		<db:mssql-connection host="${secure::db.azureSql.host}" port="${secure::db.azureSql.port}"
+			databaseName="${secure::db.azureSql.db}" user="${secure::db.azureSql.username}" useXaTransactions="true">
+			<reconnection failsDeployment="true">
+				<reconnect frequency="${retry.frequency}" count="${retry.count}" />
+			</reconnection>
+			<db:pooling-profile maxPoolSize="${db.pool.maxPoolSize}" minPoolSize="${db.pool.minPoolSize}" acquireIncrement="${db.pool.acquireIncrement}"
+				maxIdleTime="${db.pool.maxIdleTime}" maxWait="${db.pool.checkoutTimeout}" preparedStatementCacheSize="${db.pool.preparedStatementCacheSize}"
+				maxStatements="${db.pool.maxStatements}" testConnectionOnCheckout="false">
+				<db:additional-properties>
+					<db:additional-property key="preferredTestQuery" value="${db.query.preferredTestQuery}" />
+				</db:additional-properties>
+			</db:pooling-profile>
+			<db:connection-properties>
+				<!-- SERVICE PRINCIPALS AUTH -->
+				<!-- <db:connection-property key="Authentication" value="ActiveDirectoryServicePrincipal" /> -->
+				<!-- SYSTEM-ASSIGNED MANAGED IDENTITY AUTH -->
+				<!-- <db:connection-property key="Authentication" value="ActiveDirectoryMSI" /> -->
+				<!-- USER-ASSIGNED MANAGED IDENTITY AUTH -->
+				<db:connection-property key="Authentication" value="ActiveDirectoryMSI;msiClientId=${secure::db.azureSql.username}" />
+				<db:connection-property key="ApplicationIntent" value="ReadOnly" />
+				<db:connection-property key="loginTimeout" value="${db.pool.loginTimeout}" />
+				<db:connection-property key="queryTimeout" value="${db.pool.queryTimeout}" />
+				<db:connection-property key="cancelQueryTimeout" value="${db.pool.cancelQueryTimeout}" />
+				<db:connection-property key="lockTimeout" value="${db.pool.lockTimeout}" />
+				<db:connection-property key="socketTimeout" value="${db.pool.socketTimeout}" />
+			</db:connection-properties>
+		</db:mssql-connection>
+	</db:config>
+
+	<!-- SYSTEM API HTTP CONFIG -->
+	<http:request-config name="systemApiHttpRequestConfig" doc:name="HTTP Request configuration" doc:id="2953fcbf-297f-4b56-8ca1-c6fe43d135d0"
+		basePath="#[vars.systemapi.basePath]" responseTimeout="${response.timeout}">
+		<http:request-connection host="#[vars.systemapi.host]" port="#[vars.systemapi.port]" protocol="HTTPS">
+			<reconnection>
+				<reconnect frequency="${retry.frequency}" count="${retry.count}" />
+			</reconnection>
+			<tls:context>
+				<tls:trust-store insecure="true" path="${secure::https.listener.tls.keystore.path}" password="${secure::https.listener.tls.keystore.keyPassword}" type="jks" />
+			</tls:context>
+		</http:request-connection>
+	</http:request-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="5953a63c-04f4-4882-a7d9-3a3956922027" file="properties/${mule_env}.yaml" />
+</mule>
