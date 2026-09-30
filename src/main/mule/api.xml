@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+		http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+	<flow name="azure-sys-api-main">
+		<http:listener config-ref="httpListenerConfig" path="${https.listener.path}">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.outboundHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.outboundHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		<ee:transform doc:name="CommonAttributes" doc:id="4455c394-c1c7-4c4e-9d4c-4376bc289fc7">
+			<ee:variables>
+				<ee:set-variable variableName="txnId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (attributes.headers.'x-transaction-id' != null)
+						attributes.headers.'x-transaction-id' as String
+					else attributes.headers.'x-correlation-id']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="contentType"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.'accept']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.'requestUri']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="operation"><![CDATA[%dw 2.0
+					output application/java
+					---
+					upper(attributes.method)]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="host"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.headers.host]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="scheme"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.scheme]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="pagination"><![CDATA[%dw 2.0
+					output application/java
+					---
+					{
+						offset: attributes.queryParams.offset default 1,
+						limit: attributes.queryParams.limit default 100,
+						relativePath: attributes.'relativePath'
+					}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="clientIp"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.headers.'clientIp']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="clientId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					attributes.headers.'clientId']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<apikit:router config-ref="azure-sys-api-config" />
+		<error-handler ref="apiErrorHandler" />
+	</flow>
+
+	<!-- ########### CATEGORIES ########### -->
+	<flow name="get:\v1\categories\(categoryId):azure-sys-api-config">
+		<flow-ref doc:name="GetCategoriesById" doc:id="7cc636df-3c65-499b-a3df-480f431ad432" name="getCategoriesByIdSubFlow" />
+	</flow>
+
+	<!-- ########### NOTIFICATIONS ########### -->
+	<!-- USER -->
+	<flow name="get:\v1\account\notifications\(userId):azure-sys-api-config">
+		<flow-ref doc:name="GetAccountNotificationsByUserId" doc:id="abe813bc-85fb-4671-ad82-52fd9f12deae" name="accountNotificationsByUserIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\account\notifications\(userId)\id\(notificationId):azure-sys-api-config">
+		<flow-ref doc:name="GetAccountNotificationById" doc:id="cd846bbd-877e-42cb-98b3-6b5a6a4f742e" name="accountNotificationByIdSubFlow" />
+	</flow>
+	<flow name="put:\v1\account\notifications\(userId):application\json:azure-sys-api-config">
+		<flow-ref doc:name="UpdateAccountNotificationsByUserId" doc:id="ce23b501-6cd8-4ead-8484-3b7e5ad7ab7f" name="updateAccountNotificationsByIdSubFlow" />
+	</flow>
+	<!-- ADMIN -->
+	<flow name="get:\v1\account\notifications\admin\(userId):azure-sys-api-config">
+		<ee:transform doc:name="isAdmin" doc:id="2e3388f9-ad4a-48e5-87ca-ccf9c0cce971">
+			<ee:variables>
+				<ee:set-variable variableName="isAdminSearch"><![CDATA[%dw 2.0
+					output application/java
+					---
+					true]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="GetAccountNotificationsByUserId" doc:id="bd1e294e-0241-4b17-895e-4f900ce031b6" name="accountNotificationsByUserIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\account\notifications\admin\(userId)\id\(notificationId):azure-sys-api-config">
+		<ee:transform doc:name="isAdmin" doc:id="05796034-4543-4089-b323-fbee3b1a4728">
+			<ee:variables>
+				<ee:set-variable variableName="isAdminSearch"><![CDATA[%dw 2.0
+					output application/java
+					---
+					true]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="GetAccountNotificationById" doc:id="d4e12550-1860-4401-9bbf-1280184f0144" name="accountNotificationByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\account\notifications\admin\(userId)\audit\(notificationId):azure-sys-api-config">
+		<ee:transform doc:name="isAdmin" doc:id="288febf5-8529-472b-8b32-0a21399e49e0">
+			<ee:variables>
+				<ee:set-variable variableName="isAdminSearch"><![CDATA[%dw 2.0
+					output application/java
+					---
+					true]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="GetAccountAuditNotificationsById" doc:id="6309c518-f93b-4b1d-bb18-ccdabe969bc3" name="accountNotificationAuditByIdSubFlow" />
+	</flow>
+	<flow name="post:\v1\account\notifications\admin\(userId):application\json:azure-sys-api-config">
+		<ee:transform doc:name="isAdmin" doc:id="8c5af825-648b-4fdd-9452-71b02a5b9bf4">
+			<ee:variables>
+				<ee:set-variable variableName="isAdminSearch"><![CDATA[%dw 2.0
+					output application/java
+					---
+					true]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="CreateAccountNotificationsByUserId" doc:id="9c0e60bd-2346-450d-b9c8-d39f481949e0" name="createAccountNotificationsSubFlow" />
+	</flow>
+	<flow name="put:\v1\account\notifications\admin\(userId):application\json:azure-sys-api-config">
+		<ee:transform doc:name="isAdmin" doc:id="692f8d2b-e49f-4b29-b7b6-115255e7c2a2">
+			<ee:variables>
+				<ee:set-variable variableName="isAdminSearch"><![CDATA[%dw 2.0
+					output application/java
+					---
+					true]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="UpdateAccountNotificationsByUserId" doc:id="45d4467a-182d-4d64-ac68-c21609e2abcb" name="updateAccountNotificationsByIdSubFlow" />
+	</flow>
+
+	<!-- ########### ACCOUNT ################## -->
+	<flow name="get:\v1\account\(userId):azure-sys-api-config">
+		<flow-ref doc:name="GetAccountDetailsByUserId" doc:id="5e16194a-8a0a-4554-ada6-1a8b9307dd77" name="accountDetailsByUserIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\account\match:azure-sys-api-config">
+		<flow-ref doc:name="AccountDetailsMatch" doc:id="b60e01fc-158a-4644-a335-5cb20c153ed3" name="accountDetailsMatchSubFlow" />
+	</flow>
+	<flow name="put:\v1\account\status:application\json:azure-sys-api-config">
+		<flow-ref doc:name="AccountStatusSync" doc:id="39a73c77-d463-4441-9de9-2cd972b50249" name="accountStatusSyncSubFlow" />
+	</flow>
+	<!-- REGISTER -->
+	<flow name="post:\v1\account\register\portal:application\json:azure-sys-api-config">
+		<flow-ref doc:name="CreateAccountDetailsByUserId" doc:id="51cdd6e6-2bd8-499e-8bb1-6f30c0ae439d" name="createAccountDetailsSubFlow" />
+	</flow>
+	<flow name="patch:\v1\account\register\portal:application\json:azure-sys-api-config">
+		<flow-ref doc:name="AccountRegistrationSync" doc:id="5decc840-d7cc-42c4-b8ec-8a422c10c16a" name="accountRegistrationSyncSubFlow" />
+	</flow>
+	<flow name="put:\v1\account\register\portal\(userId):application\json:azure-sys-api-config">
+		<flow-ref doc:name="UpdateAccountDetailsByUserId" doc:id="9750d0aa-7da4-4b46-a8ac-fb8a43bf6817" name="updateAccountDetailsSubFlow" />
+	</flow>
+	<flow name="post:\v1\account\register\users:application\json:azure-sys-api-config">
+		<flow-ref doc:name="CreateUsers" doc:id="77ec0512-a600-46d0-ace0-cbd38825082c" name="createUserSubFlow" />
+	</flow>
+	<flow name="delete:\v1\account\register\users\(userId):azure-sys-api-config">
+		<flow-ref doc:name="DeleteUser" doc:id="fdd006fb-8f41-4332-b551-dcc5848612a6" name="deleteUserSubFlow" />
+	</flow>
+
+	<!-- ########### ORGANISATION ################ -->
+	<flow name="get:\v1\organisations:azure-sys-api-config">
+		<flow-ref doc:name="GetOrganisationList" doc:id="fad31b7e-a463-46c0-92dd-5f3438af7bc6" name="getOrgListSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId):azure-sys-api-config">
+		<flow-ref doc:name="GetOrgDetailsById" doc:id="6ece385e-aff8-41bf-900a-36fe5f4524f3" name="getOrgDetailsByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\validate:azure-sys-api-config">
+		<flow-ref doc:name="ValidateOrgId" doc:id="c8dff7ac-154b-472a-bb9b-4fe918f4d318" name="getOrgDetailsByIdSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\branch:application\json:azure-sys-api-config" doc:id="c40e8995-bfa6-4e76-a9ec-ea05c752360f">
+		<flow-ref doc:name="CreateBranchById" doc:id="7540cbe8-81cb-4bdf-bcb4-5b7868a22c84" name="createBranchByIdSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId):application\json:azure-sys-api-config" doc:id="67e43d69-3f3e-4dd6-82b8-5f7408263e1d">
+		<flow-ref doc:name="UpdateOrgDetailsById" doc:id="9572f4c8-a3de-405b-a4a2-4da673f62c97" name="updateOrgDetailsByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\branch:azure-sys-api-config">
+		<flow-ref doc:name="GetBranchList" doc:id="1bc2d508-2999-446b-8972-b19f689d7513" name="getBranchListSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\branch\(branchId):azure-sys-api-config">
+		<flow-ref doc:name="GetBranchDetailsById" doc:id="cd41a80c-8e4b-4827-8f09-1d545cd01db7" name="getBranchDetailsByIdSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\branch\(branchId)\users\(userId):application\json:azure-sys-api-config" doc:id="5640ea57-0d86-482b-b163-1f2db78e1a3c">
+		<flow-ref doc:name="updateUserSubFlow" doc:id="41a5c882-6bf7-4258-9872-c539648abc43" name="updateUserSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\emaildomains:application\json:azure-sys-api-config">
+		<flow-ref doc:name="LookupEmailDomains" doc:id="bde3c492-8ff2-4906-9741-c6cf6e0c16ee" name="getEmailDomainsSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\branch\(branchId)\users:azure-sys-api-config" doc:id="761497e7-656d-410b-9b30-4f68910452e7">
+		<flow-ref doc:name="ViewUserById" doc:id="95e6dcb4-2249-4611-bb91-cb84fc82dda8" name="viewUserByIdSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\branch\(branchId)\users:application\json:azure-sys-api-config">
+		<flow-ref doc:name="createUsers" doc:id="bb54e035-24bc-447c-b7d3-11f10474c1fc" name="createUsersSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\branch\(branchId):application\json:azure-sys-api-config" doc:id="16ef4272-6c3f-47b7-8c54-9998dbc888b8">
+		<flow-ref doc:name="UpdateBranchDetailsById" doc:id="d8b23197-f2f1-437f-97ef-80c12afab521" name="updateBranchDetailsByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\actingonbehalfof:azure-sys-api-config">
+		<flow-ref doc:name="GetActingOnBehalfOfById" doc:id="1a20df24-5668-4329-b72e-c2047e459c61" name="getActingOnBehalfOfByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\users:azure-sys-api-config" doc:id="0a1bca63-f5d8-45c9-b6cd-6015f91c8eb5">
+		<flow-ref doc:name="GetUsersById" doc:id="37c301a0-83e6-4609-9556-1e54b531d6fd" name="getUsersByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\associatedorganisations:azure-sys-api-config" doc:id="b46f314b-15ae-44a4-98ef-67756ca242ae">
+		<flow-ref doc:name="getAssociatedOrganisationsSubFlow" doc:id="0753bd5f-6120-453c-aee2-655f20b5fb7e" name="getAssociatedOrganisationsSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\insurerselection:azure-sys-api-config" doc:id="3ef1914c-8f85-430e-9f37-d49eeb5ae70d">
+		<flow-ref doc:name="getInsurerSelectionSub_Flow" doc:id="4cebb302-33b0-42a4-a3e1-65b55fb2d343" name="getInsurerSelectionSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\list:azure-sys-api-config">
+		<flow-ref doc:name="GetOrganisationMibList" doc:id="16d755a6-84b5-4868-9e00-c75ba7968f6c" name="getOrgMibListSubFlow" />
+	</flow>
+
+	<!-- CONTACTS MANAGEMENT -->
+	<flow name="get:\v1\organisations\(orgId)\contacts:azure-sys-api-config">
+		<flow-ref doc:name="GetContacts" doc:id="7a731d4f-0f57-4025-ab6f-123115e6b801" name="getContactsSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\contacts:application\json:azure-sys-api-config">
+		<flow-ref doc:name="CreateContact" doc:id="d322df77-459d-4b34-8e71-10d6f3713230" name="createContactSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\contacts\(contactId):application\json:azure-sys-api-config">
+		<flow-ref doc:name="updateContactSubFlow" doc:id="68b7f6a2-0dcb-4b7d-acef-0d46a652c232" name="updateContactSubFlow" />
+	</flow>
+	<flow name="delete:\v1\organisations\(orgId)\contacts\(contactId):azure-sys-api-config">
+		<flow-ref doc:name="deleteContactById" doc:id="4104a47b-464f-4c58-973b-83912b7ecbd2" name="deleteContactSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\contacts\(contactId):azure-sys-api-config">
+		<flow-ref doc:name="GetContactsById" doc:id="b688c7b7-d383-4771-867f-fc7696162e77" name="getContactsByIdSubFlow" />
+	</flow>
+	<!-- PERMITTED DRIVERS -->
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\permitteddrivers:azure-sys-api-config">
+		<flow-ref doc:name="getPermittedDriversByInsurerIdSubFlow" doc:id="37b6640d-f082-4534-8090-067cf92496bd" name="getPermittedDriversByInsurerIDSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\insurer\(insurerId)\permitteddrivers:application\json:azure-sys-api-config">
+		<flow-ref doc:name="upsertPermittedDriversSubFlow" doc:id="b5e311bc-a543-44d4-8902-42d3964fbcc4" name="upsertPermittedDriverCodeSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\insurer\(insurerId)\permitteddrivers:application\json:azure-sys-api-config">
+		<flow-ref doc:name="upsertPermittedDriversSubFlow" doc:id="5ee94a10-0397-4666-b617-78cb48626782" name="upsertPermittedDriverCodeSubFlow" />
+	</flow>
+	<!-- CLASS OF USE CODES -->
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\classofusecodes:azure-sys-api-config" doc:id="42b12e31-8012-41c7-9e7b-86b08c1a279c">
+		<flow-ref doc:name="getClassOfUseCodesByInsurerIdSubFlow" doc:id="77430395-8130-4e13-8db0-7aed3b89b756" name="getClassOfUseCodesByInsurerIDSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\insurer\(insurerId)\classofusecodes:application\json:azure-sys-api-config" doc:id="063dcfb1-1b94-44a6-8089-c91d9ff3d18a">
+		<flow-ref doc:name="upsertClassOfUseCodesSubFlow" doc:id="8df63513-e08e-418d-9142-974722137ef5" name="upsertClassOfUseCodeSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\insurer\(insurerId)\classofusecodes:application\json:azure-sys-api-config" doc:id="c72f9068-8d02-4533-9b1c-3ca4260fb7a8">
+		<flow-ref doc:name="upsertClassOfUseCodesSubFlow" doc:id="872bbd6e-28b0-475e-9848-9a1717727c4e" name="upsertClassOfUseCodeSubFlow" />
+	</flow>
+	<!-- POLICY LEVEL CONTACT DETAILS -->
+	<flow name="put:\v1\organisations\(orgId)\insurer\(insurerId)\policylevelcontactdetails:application\json:azure-sys-api-config" doc:id="02294f11-c73a-4f1b-8fed-3e797ff2a19b">
+		<flow-ref doc:name="updatePolicyLevelContactDetailsSubFlow" doc:id="4209c2cc-8fb6-4a3f-b457-c9a86224a8af" name="updatePolicyLevelContactDetailsSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policylevelcontactdetails:azure-sys-api-config">
+		<flow-ref doc:name="getPolicyLevelContactDetailsSubFlow" doc:id="ec7c0db3-a59a-4160-be8d-465232b802eb" name="getPolicyLevelContactDetailsSubFlow" />
+	</flow>
+
+	<!-- ########### DOCUMENTS ################ -->
+	<flow name="get:\v1\documents:azure-sys-api-config">
+		<flow-ref doc:name="getDocumentId" doc:id="bb9a2f64-e5dc-4eb9-9f8e-7cb2c8bd13ef" name="getDocumentByIdSubFlow" />
+	</flow>
+	<flow name="post:\v1\documents:application\json:azure-sys-api-config">
+		<flow-ref doc:name="AddDocuments" doc:id="39ca59ba-a372-4870-af6d-d23e19264f6f" name="addDocumentsSubFlow" />
+	</flow>
+	<flow name="get:\v1\documents\list:azure-sys-api-config">
+		<flow-ref doc:name="DocumentTypeList" doc:id="eb92f4a2-da21-4af4-8b81-74199a30bcf1" name="getDocumentsByDocumentTypeSubFlow" />
+	</flow>
+	<flow name="post:\v1\documents\batch:application\json:azure-sys-api-config">
+		<flow-ref doc:name="AddBatchDocuments" doc:id="3fcb6331-cb22-48c7-8e7c-34e0818b0ccb" name="addBatchDocumentsSubFlow" />
+	</flow>
+
+	<!-- ########### CONTENT ################ -->
+	<flow name="get:\v1\content\tcagreements:azure-sys-api-config">
+		<flow-ref doc:name="getTC" doc:id="8f0b5374-77de-420a-b7cf-72992f984e1e" name="getTcAgreementsSubFlow" />
+	</flow>
+	<flow name="post:\v1\content\tcagreements:application\json:azure-sys-api-config">
+		<flow-ref doc:name="AddTC" doc:id="4314839b-5736-4cb7-9d21-a76a9e631ef7" name="addTcAgreementsSubFlow" />
+	</flow>
+	<flow name="put:\v1\content\tcagreements:application\json:azure-sys-api-config">
+		<flow-ref doc:name="UpdateTC" doc:id="6068710b-9a4f-4113-984d-0f14239edf82" name="updateTcAgreementsSubFlow" />
+	</flow>
+	<flow name="get:\v1\content\tcagreements\(tcId):azure-sys-api-config">
+		<flow-ref doc:name="getTCById" doc:id="e374e7f6-4165-4e8f-9a72-cd11b66d830c" name="getTcAgreementsByIdSubFlow" />
+	</flow>
+
+	<!-- ########### INSURER POLICIES AND VEHICLES ################ -->
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policies\vrm\(vrm):azure-sys-api-config">
+		<flow-ref doc:name="SearchPolicies" doc:id="905ff701-f110-4504-984e-43c9243d4875" name="searchPoliciesSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\da\(daId)\policies\vrm\(vrm):azure-sys-api-config">
+		<flow-ref doc:name="SearchPolicies" doc:id="d0eaad16-510b-4388-9808-1881d846a455" name="searchPoliciesSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policies\(policyId)\vehicles:azure-sys-api-config">
+		<flow-ref doc:name="getVehicleListByIdSubFlow" doc:id="b3b9cb95-cc94-4907-aa9b-77a0006b7617" name="getVehicleListByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policies\(policyId):azure-sys-api-config">
+		<flow-ref doc:name="getPolicyByIdSubFlow" doc:id="db4a27a1-15ba-4535-8987-d4809cb95ecd" name="getPolicyByIdSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\insurer\(insurerId)\policies\(policyId)\vehicles\(vrm):application\json:azure-sys-api-config">
+		<flow-ref doc:name="updateVehicleByIdSubFlow" doc:id="d228c4df-d26a-4e33-b542-c06ccbed21c3" name="updateVehicleByIdSubFlow" />
+	</flow>
+	<flow name="delete:\v1\organisations\(orgId)\insurer\(insurerId)\policies\(policyId)\vehicles\(vrm):azure-sys-api-config">
+		<flow-ref doc:name="deleteVehicleByIdSubFlow" doc:id="bdc0afe2-c214-420b-abcc-3c3807698e04" name="deleteVehicleByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\insurerda:azure-sys-api-config" doc:id="e9ada668-5f41-4359-9b13-e9139053bef6">
+		<flow-ref doc:name="getToggleFeatureDetailsSubFlow" doc:id="87a6a918-f007-49dd-945a-c1ce8b4e976e" name="getToggleFeatureDetailsSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\insurerdadetails:application\json:azure-sys-api-config">
+		<flow-ref doc:name="UpsertInsurerDa" doc:id="450c2337-d1fe-4825-845c-7648b81a6ce3" name="upsertInsurerDaSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\insurerdadetails:azure-sys-api-config">
+		<flow-ref doc:name="GetInsurerDa" doc:id="9db9b4a4-e43b-4393-a13c-083d32bc869c" name="getInsurerDaSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\downloadvehicle\(policyId):azure-sys-api-config">
+		<flow-ref doc:name="getDownloadVehicleScheduleSubFlow" doc:id="b59d9d1b-c6dc-48e5-9bcb-d04d9c1bb01a" name="getDownloadVehicleScheduleSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\insurer\(insurerId)\policies\(policyId)\vehicles\(vrm):application\json:azure-sys-api-config">
+		<flow-ref doc:name="addVehicleDetailsSubFlow" doc:id="b4a75e39-da7a-4b1f-afcf-b68fc6684788" name="addVehicleDetailsSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policies\(policyId)\vehicles\(vrm):azure-sys-api-config">
+		<flow-ref doc:name="getCoverDateByIdSubFlow" doc:id="5f3a01d0-803d-44f4-ae56-9ba66f6a6e7d" name="getCoverDateByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder:azure-sys-api-config">
+		<flow-ref doc:name="getPolicyHolderList" doc:id="4386e9ce-c731-4dd9-86fc-ce9e17d4d783" name="getPolicyHolderListSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder:azure-sys-api-config" doc:id="5cb86cf5-bc85-4108-b7bb-ed1fb969b428">
+		<flow-ref doc:name="addPolicyHolderSubFlow" doc:id="b14daa9c-a3bc-48cf-86e9-65503632d82d" name="addPolicyHolderSubFlow"/>
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder:application\json:azure-sys-api-config">
+		<flow-ref doc:name="updatePolicyHolderSubFlow" doc:id="c1b06cb1-652c-431c-9612-a58bba884a35" name="updatePolicyHolderSubFlow" />
+	</flow>
+	<flow name="delete:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder:azure-sys-api-config">
+		<flow-ref doc:name="deletePolicyHolderSubFlow" doc:id="6eebb09f-9072-4a59-85cd-3a3cae33a6ca" name="deletePolicyHolderByIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder\(userId):azure-sys-api-config">
+		<flow-ref doc:name="getPolicyHolderById" doc:id="516ac669-9a62-4829-9618-586873581bda" name="getPolicyHolderByIdSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder\(userId):application\json:azure-sys-api-config">
+		<flow-ref doc:name="updatePolicyHolderById" doc:id="f7b46d39-ce7c-4827-aa3a-c31cd7ea697c" name="updatePolicyHolderByIdSubFlow" />
+	</flow>
+	<flow name="put:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder\policy\(userId):application\json:azure-sys-api-config">
+		<flow-ref doc:name="updatePolicyHolderCurrentPolicySubFlow" doc:id="9462d2d0-ba50-40d5-9e7c-b5092465d5df" name="updatePolicyHolderCurrentPolicySubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder\list:azure-sys-api-config">
+		<flow-ref doc:name="getExportPolicyHolderList" doc:id="481823ad-37a1-4f45-90d4-315f9ecc6e43" name="getExportPolicyHolderListSubFlow" />
+	</flow>
+	<flow name="post:\v1\organisations\(orgId)\insurer\(insurerId)\policyholder\policy\(userId):application\json:azure-sys-api-config" doc:id="377e3bb6-2714-4b6d-80ea-9a3c2d7e5f18">
+		<flow-ref doc:name="AddPolicyAccessForPolicyHolder" doc:id="85104a17-41d8-430d-b4ab-6b4c8b7a9a0a" name="addPolicyAccessForPolicyHolderSubFlow"/>
+	</flow>
+	<flow name="get:\v1\organisations\usertype:azure-sys-api-config" doc:id="679de57c-e100-4af3-bbf3-00e915ab6b18">
+		<flow-ref doc:name="getUserTypeSelectionSubFlow" doc:id="81a8da25-553f-45ea-8e8c-c34f3bce7dbc" name="getUserTypeSelectionSubFlow" />
+	</flow>
+
+	<!-- FILE TRANSFER -->
+	<flow name="get:\v1\organisations\(orgId)\filetransfer:azure-sys-api-config">
+		<flow-ref doc:name="GetFileTransferSubFlow" doc:id="a514e8c4-bc77-486d-a1e7-5f466ac3bce1" name="getFileTransferSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\filetransfer\filerequestid\(fileRequestId):azure-sys-api-config" doc:id="42d8fc90-4e4d-4376-a921-f3037809f6f8">
+		<flow-ref doc:name="getFileRequestIdSubFlow" doc:id="a786076d-2fe7-40b6-a242-85830d4a236a" name="getFileRequestIdSubFlow" />
+	</flow>
+	<flow name="get:\v1\organisations\(orgId)\filetransfer\filerequestid\(fileRequestId)\export:azure-sys-api-config" doc:id="89ab51fc-b1b8-4776-a05c-d0fabeb96159">
+		<flow-ref doc:name="getExportFileRequestIdSubFlow" doc:id="180217fd-7a69-4fe6-995a-940cb4ad311e" name="getExportFileRequestIdSubFlow" />
+	</flow>
+	<!-- ########### POLICIES ################ -->
+	<flow name="get:\v1\policies:azure-sys-api-config">
+		<flow-ref doc:name="GetPoliciesList" doc:id="f033b1ca-7043-4bbb-b87a-7e2f2c3386d4" name="getPolicyListSubFlow" />
+	</flow>
+
+	<!-- ########### ADMIN MANAGEMENT/SUPPORT API's ################ -->
+	<flow name="post:\v1\admin\management\vrms:application\json:azure-sys-api-config">
+		<flow-ref doc:name="createVrmManagement" doc:id="3ced6911-2e46-4e38-ad8d-2f8be7e7e7e3" name="createVrmManagementSubFlow" />
+	</flow>
+	<flow name="put:\v1\admin\management\vrms:application\json:azure-sys-api-config">
+		<flow-ref doc:name="updateVrmManagement" doc:id="6d70de0b-9f08-4daf-b5c5-b7fb121f99ae" name="updateVrmManagementSubFlow" />
+	</flow>
+	<flow name="get:\v1\admin\management\vrms:azure-sys-api-config">
+		<flow-ref doc:name="VrmManagement" doc:id="7379f46a-e81f-40a7-9971-37eca850aaa3" name="getAdminVrmManagementSubFlow" />
+	</flow>
+
+	<!-- # THE BELOW API IS TEMPORARY FOR CVT RELATED SUPPORT -->
+	<flow name="get:\v1\admin\organisations:azure-sys-api-config">
+		<flow-ref doc:name="AdminOrgDetails" doc:id="15233d0e-5b6c-490a-9c3b-92ca3d4031db" name="adminOrgSubFlow" />
+	</flow>
+	<flow name="get:\v1\admin\organisations\(orgId):azure-sys-api-config">
+		<flow-ref doc:name="AdminOrgDetails" doc:id="db6df400-1b71-4b12-b999-44aac6e0ef4e" name="adminOrgSubFlow" />
+	</flow>
+	<flow name="get:\v1\admin\users\(userId):azure-sys-api-config">
+		<flow-ref doc:name="AdminUserDetails" doc:id="ef5d5cd9-dbe4-413c-a06c-ea6da47527ce" name="adminUserByIdSubFlow" />
+	</flow>
+	<flow name="put:\v1\admin\users\(userId):application\json:azure-sys-api-config">
+		<flow-ref doc:name="updateAdminUserDetailsSubFlow" doc:id="4ae442df-e6d6-4039-a251-036ac0d2a725" name="updateAdminUserDetailsSubFlow" />
+	</flow>
+	<flow name="get:\v1\admin\users:azure-sys-api-config">
+		<flow-ref doc:name="AdminUserDetails" doc:id="4431f17a-aa10-46c7-b21d-10ff9038d76e" name="adminUsersSubFlow" />
+	</flow>
+	<flow name="delete:\v1\admin\users\(userId):azure-sys-api-config">
+		<flow-ref doc:name="AdminDeleteUser" doc:id="9c181211-778c-4f2e-9e1e-06f79feb42c0" name="adminDeleteUserSubFlow" />
+	</flow>
+	<flow name="post:\v1\admin\users\sftp:application\json:azure-sys-api-config">
+		<flow-ref doc:name="AdminSftpUser" doc:id="e89357c6-f6ae-4c2b-b315-3c3061db25c0" name="adminSftpUserSubFlow" />
+	</flow>
+	<flow name="get:\v1\admin\user\(userId):azure-sys-api-config">
+		<flow-ref doc:name="AccountDetailsById" doc:id="0ea4ae97-070b-4725-9e5f-60a3e1acb847" name="accountDetailsByIdSubFlow" />
+	</flow>
+	<flow name="get:\v2\admin\users:azure-sys-api-config">
+		<flow-ref doc:name="AdminUsersListSubFlow" doc:id="99b1b371-1c39-4d2a-87c3-371a8dc4563c" name="adminUsersListSubFlow" />
+	</flow>
+	<flow name="get:\v2\admin\users\(userId):azure-sys-api-config">
+		<flow-ref doc:name="AdminUserListDetailsByIdSubFlow" doc:id="75ccd212-3869-41e2-b85e-16e3321b270d" name="adminUserListDetailsByIdSubFlow" />
+	</flow>
+	<flow name="post:\v1\admin\migration\oktalink:application\json:azure-sys-api-config">
+		<flow-ref doc:name="MigrationOktaLink" doc:id="61dfebd5-2add-4ce9-be43-4b22e4936d03" name="migrationOktaLinkSubFlow" />
+	</flow>
+
+	<!-- PAYMENTS -->
+	<flow name="post:\v1\payments\receipt:application\json:azure-sys-api-config">
+		<flow-ref doc:name="PaymentsReceipt" doc:id="3231fcca-d65b-4d1b-8238-6007ad349495" name="createPaymentsReceiptSubFlow" />
+	</flow>
+	<flow name="put:\v1\payments\receipt:application\json:azure-sys-api-config">
+		<flow-ref doc:name="PaymentsReceipt" doc:id="664d2130-3fec-4d0b-8476-5939b255acc0" name="updatePaymentsReceiptSubFlow" />
+	</flow>
+
+	<!-- SUPPORT -->
+	<flow name="put:\v1\support:application\json:azure-sys-api-config">
+		<flow-ref doc:name="UpdateTicket" doc:id="e7b8c9d0-1fab-4def-c6d7-e8f9a0b1c2d3" name="updateTicketSubFlow" />
+	</flow>
+
+</mule>
