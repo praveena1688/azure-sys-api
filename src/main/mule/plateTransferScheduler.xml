@@ -1,0 +1,428 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/java" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd">
+
+	<!-- PLATE TRANSFER SCHEDULER FLOW -->
+	<flow name="plateTransferSchedulerFlow" doc:id="4c08de9c-349e-4e93-b4e3-2b1786037871">
+		<scheduler doc:name="PlateTransfer" doc:id="08058a7a-5276-4379-9d92-963a6964b656" disallowConcurrentExecution="true">
+			<scheduling-strategy>
+				<!-- <fixed-frequency frequency="2" startDelay="0" timeUnit="MINUTES" /> -->
+				<cron expression="${scheduler.plateTransfer.cron}" timeZone="Europe/London"/>
+			</scheduling-strategy>
+		</scheduler>
+		<ee:transform doc:name="Entity" doc:id="bbaca168-c0ff-47b9-9551-aac1d3f49001">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'plateTransferVMPublish']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<vm:publish doc:name="PlateTransferPublish" doc:id="5413bd90-47b0-4add-86b3-b01c155838a2" config-ref="vmConfig" sendCorrelationId="AUTO" queueName="plateTransferQueue" />
+		<ee:transform doc:name="LogMsg" doc:id="493a4a8e-5816-4171-96cc-7f6204c0fea4">
+			<ee:variables>
+				<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="99435238-1e83-4581-b8f5-7b63e030fc69" name="commonLoggingExitSubFlow" />
+	</flow>
+
+	<flow name="plateTransferProcessFlow" doc:id="9931fe77-575d-4c73-9378-d6033489fc69">
+		<vm:listener doc:name="plateTransfer" doc:id="da6dd4f5-5190-4ad2-bf8e-0fdf8b88bae0" config-ref="vmConfig" numberOfConsumers="1"
+		queueName="plateTransferQueue" timeout="${vm.plateTransfer.timeout}" timeoutUnit="MINUTES" primaryNodeOnly="true" />
+		<ee:transform doc:name="Entity" doc:id="bd5dd20d-fd53-44d0-848e-1102c3af9be1">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'plateTransferProcess']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="ukvdProcess"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'plateTransfer']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="txnId"><![CDATA[%dw 2.0
+					output application/json
+					---
+					(now() >> 'GMT') as LocalDateTime {format: "yyyyMMddHHmmss"}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'Scheduler - Plate Transfer Update']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="currDateTime"><![CDATA[%dw 2.0
+					import dateTimeSqlConversion from dwl::modules
+					output application/java
+					---
+					dateTimeSqlConversion(now() >> 'GMT')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="batchStartDateTime"><![CDATA[%dw 2.0
+					output application/java
+					---
+					(now() >> 'GMT')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="batchJobInstanceId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					('PlateTransferBatchJob-' ++ ((now() >> 'GMT') as String {format: "yyyyMMddHHmmss"})) as String ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="dc1e9b60-4d24-4704-8577-4faa3e42432b" name="commonLoggingEntrySubFlow" />
+
+		<!-- FETCH UKVD START DATE -->
+		<db:select doc:name="UKVDStartDate" doc:id="dec919b0-3789-463f-a2c8-faf0708b88fe" config-ref="azureSqlDatabaseReadOnlyConfig"
+		target="enquiryDate" targetValue="#[%dw 2.0 output application/java --- payload[0].OS_VALUE]">
+			<db:sql><![CDATA[${db.query.select.objectStore}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{ osKey: 'ukvdStartDate', env: Mule::p('env') }]]]></db:input-parameters>
+		</db:select>
+		<set-variable value="#[%dw 2.0 output application/java --- 'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' PLATE TRANSFER - UKVD START DATE: ' ++ vars.enquiryDate default '']" doc:name="MsgLog" variableName="message" />
+		<flow-ref doc:name="MsgLog" doc:id="c3b518cc-3338-4583-a80c-9a31fcca3c34" name="commonLoggingMessageSubFlow"/>
+
+		<!-- FETCH PLATE UPDATE RECORD -->
+		<flow-ref doc:name="UKVDLookup" doc:id="c66e6b16-b9c4-4534-85b4-a94274372782" name="ukvdLookupSubFlow" />
+
+		<!-- IF UKVD DATA AVAILABLE -->
+		<choice doc:name="isUkvdNotEmpty" doc:id="14b02fc9-da82-4d57-8891-ce02320e1d3a">
+			<when expression="#[ (!isEmpty(payload)) and (!isEmpty(payload.data)) ]">
+				<ee:transform doc:name="SetVars" doc:id="e658bd82-570e-43a5-a1b7-da447f961235">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+							output application/java
+							---
+							payload.data filter ( (!isBlank($.vrm)) and (!isBlank($.vin)) and (!isBlank($.previousVrmTransferDate)) ) ]]>
+						</ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+							output application/json
+							---
+							'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' USERID BY USERNAME QUERY' ]]>
+						</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+
+				<!-- FETCH THE PLATE UPDATE USER DETAILS -->
+				<flow-ref doc:name="StartDurationLog" doc:id="c64d85ef-edbe-4cab-a6ad-ab8bacb58fb9" name="startDurationLogSubFlow" />
+				<db:select doc:name="UserDetails" doc:id="6a288cf5-7038-447e-870b-8453c3a44576" config-ref="azureSqlDatabaseReadOnlyConfig"
+				target="cherishedUser" targetValue="#[%dw 2.0 output application/java --- payload[0]]">
+					<db:sql><![CDATA[${db.query.select.userIdByUserName}]]></db:sql>
+					<db:input-parameters><![CDATA[#[{ userName: Mule::p('claims.plateTransfer.batch.userName') }]]]></db:input-parameters>
+				</db:select>
+				<flow-ref doc:name="EndDurationLog" doc:id="03f5aeda-74c0-4486-8037-d63a91904d55" name="endDurationLogSubFlow" />
+
+				<!-- PLATE TRANSFER BATCH JOB -->
+				<flow-ref doc:name="PlateTransferSchedulerBatchJob" doc:id="27b30449-2227-4011-abf3-66c2e18d6c0d" name="plateTransferSchedulerBatchSubFlow" />
+			</when>
+			<otherwise>
+				<set-variable value="#[%dw 2.0 output application/java --- true]" doc:name="MsgLog" doc:id="7b778e69-268b-4acc-b72c-b5d9ce9dfd82" variableName="noRecords"/>
+				<!-- EMAIL REQUEST -->
+				<ee:transform doc:name="EmailReq" doc:id="9ece3276-37e5-463b-ae55-18bfa0ab5576">
+					<ee:message>
+						<ee:set-payload resource="dwl/scheduler/ukvdBatchEmailReq.dwl" />
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+							output application/java
+							---
+							'NO PLATE TRANSFER RECORDS AVAILABLE TO PROCESS FOR RUNDATE: ' ++ vars.currDateTime ++ ' AND ENQUIRY DATE: ' ++ vars.enquiryDate default '' ]]>
+						</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="SendEmail" doc:id="2e2a03dd-fa8f-4a7a-b18c-5b858ba3460f" name="sendEmailSubFlow" />
+				<flow-ref doc:name="MsgLog" doc:id="c5edf1c9-9920-41a7-83ca-304b32d6bd61" name="commonLoggingMessageSubFlow" />
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="LogMsg" doc:id="f7efd675-afe1-40c1-ac8b-662f1ca7a063">
+			<ee:variables>
+				<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="5c289528-b905-41db-9467-055cc30079b6" name="commonLoggingExitSubFlow" />
+	</flow>
+
+	<sub-flow name="captureErrorSubFlow" doc:id="6e8e7497-5d4a-43f5-8459-0a8ddcdc285f">
+		<flow-ref doc:name="ErrorLog" doc:id="f2dfc0d1-53ca-4302-8231-1f10e1bc13f3" name="commonLoggingErrorSubFlow" />
+		<ee:transform doc:name="ErrorMessage" doc:id="d62bad1f-81dc-4d8c-841e-eff800da1bc0">
+			<ee:variables>
+				<ee:set-variable variableName="errorRecords"><![CDATA[%dw 2.0
+					output application/json
+					var errObj = {
+						claimNumber: vars.claimNumber,
+						plateDetails: vars.ptDetails,
+						errorDetails: {
+							errType: error.errorType.namespace ++ ':' ++ error.errorType.identifier,
+							errDescription: error.description,
+							errMessage: error.errorMessage.payload
+						}
+					}
+					---
+					(vars.errorRecords default []) + errObj ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+	</sub-flow>
+
+	<sub-flow name="plateTransferSchedulerBatchSubFlow" doc:id="19f4a972-d448-4548-8adc-da7bc5a49bcb">
+		<!-- BATCH PROCESS -->
+		<batch:job jobName="plateTransferSchedulerBatchJob" doc:id="1e0e6396-bad5-4354-af1a-4815ddf4a967" blockSize="${claims.plateTransfer.batch.blockSize}"
+		maxFailedRecords="${claims.plateTransfer.batch.maxFailures}" maxConcurrency="${claims.plateTransfer.batch.concurrency}" jobInstanceId="#[vars.batchJobInstanceId]"
+		schedulingStrategy="ORDERED_SEQUENTIAL">
+			<batch:process-records>
+				<!-- FETCH ALL CLAIMS FROM CLAIMS VEHICLE TABLE WITH PREVIOUS VRM -->
+				<batch:step name="FetchClaimsBatchStep" doc:id="1c774ea6-f764-482f-8d82-456ddb4970eb" acceptPolicy="NO_FAILURES">
+					<ee:transform doc:name="SetVars" doc:id="af06d7b6-0ecd-41bb-ba0b-b37e56153785">
+						<ee:variables>
+							<ee:set-variable variableName="ptDetails"><![CDATA[%dw 2.0
+								output application/json
+								---
+								payload ]]>
+							</ee:set-variable>
+							<ee:set-variable variableName="ukvdProcess"><![CDATA[%dw 2.0
+								output application/java
+								---
+								'plateTransfer']]>
+							</ee:set-variable>
+							<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+								output application/java
+								---
+								'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' Claim Search Plate Transfer']]>
+							</ee:set-variable>
+							<ee:set-variable variableName="errorRecords"><![CDATA[%dw 2.0
+								output application/java
+								---
+								[] ]]>
+							</ee:set-variable>
+							<ee:set-variable variableName="currDateTime"><![CDATA[%dw 2.0
+								import dateTimeSqlConversion from dwl::modules
+								output application/java
+								---
+								dateTimeSqlConversion(now() >> 'GMT')]]>
+							</ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<try>
+						<flow-ref doc:name="StartDurationLog" doc:id="fb248116-de7b-483f-8db8-fb5cdbf3c311" name="startDurationLogSubFlow" />
+						<until-successful maxRetries="${claims.plateTransfer.batch.maxRetries}" millisBetweenRetries="${claims.plateTransfer.batch.millisRetries}"
+						doc:name="Until Successful" doc:id="53980fe2-1e76-4842-993a-3c7104827080">
+							<db:select doc:name="ClaimSearch" doc:id="6b1cafa1-8ffb-4bcf-ac0b-57a5955b0e5c" config-ref="azureSqlDatabaseConfig">
+								<db:sql><![CDATA[${db.query.select.claimSearchPlateTransfer}]]></db:sql>
+								<db:input-parameters><![CDATA[#[{
+									vrm: payload.vrm,
+									vin: payload.vin,
+									plateTransferDate: payload.previousVrmTransferDate }]]]></db:input-parameters>
+							</db:select>
+						</until-successful>
+						<flow-ref doc:name="EndDurationLog" doc:id="55099262-09c9-42b8-b586-587eeb6d09af" name="endDurationLogSubFlow" />
+						<ee:transform doc:name="SetVars" doc:id="774a2ed0-af23-42fe-9802-84003b414b59">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+									output application/java
+									---
+									if (sizeOf(payload) > 0) (payload map ($ ++ {ptDetails: vars.ptDetails})) else [] ]]>
+								</ee:set-payload>
+							</ee:message>
+							<ee:variables>
+								<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+									output application/java
+									---
+									'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' STEP 1 - TOTAL RECORDS: ' ++ sizeOf(payload) ++ ' FOR PLATE UPDATE DETAILS: '
+									 ++ (write(vars.ptDetails default '','application/java')) ]]>
+								</ee:set-variable>
+								<ee:set-variable variableName="totalRecords"><![CDATA[%dw 2.0
+									output application/java
+									---
+									sizeOf(payload) ]]>
+								</ee:set-variable>
+							</ee:variables>
+						</ee:transform>
+						<flow-ref doc:name="MsgLog" doc:id="aac7513c-7108-4c15-abb0-99460170a196" name="commonLoggingMessageSubFlow" />
+						<error-handler>
+							<on-error-continue type="MULE:RETRY_EXHAUSTED,DB:QUERY_EXECUTION">
+								<set-variable value="#[%dw 2.0 output application/java --- true]" doc:name="MsgLog" doc:id="322dfbf3-21dd-4cf3-850e-ffd3eab4a697"
+								variableName="stepError"/>
+								<flow-ref doc:name="CaptureError" doc:id="89a6a9e1-c5ac-41a2-a211-b769f8a88279" name="captureErrorSubFlow" />
+							</on-error-continue>
+						</error-handler>
+					</try>
+				</batch:step>
+
+				<!-- UPDATE CLAIMS WITH CURRENT AND PREVIOUS VRM -->
+				<batch:step name="UpdateClaimsBatchStep" doc:id="42cf1b61-f61c-4689-b492-ef583dc5dab6"
+				acceptExpression="#[%dw 2.0 output application/java --- (!(vars.stepError default false)) and (sizeOf(payload) > 0)]" preserveMimeTypes="true" streaming="true">
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="134cbbfa-1884-4232-b8b0-fbc602ab60d7">
+						<ee:transform doc:name="AggregatorPayload" doc:id="ad10a266-d733-4265-8b72-9a7b1ab435e0">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+									output application/java
+									---
+									if (!isEmpty(payload)) (flatten(payload) orderBy ((item, index) -> item.CLAIM_NUMBER)) else [] ]]>
+								</ee:set-payload>
+							</ee:message>
+						</ee:transform>
+						<!-- FOR EACH CLAIM REQUEST -->
+						<try doc:name="For Each Claim">
+							<foreach doc:name="For Each Claim Request" doc:id="14d284cb-bef6-4ffa-af1c-0449a611892d"
+							collection="#[%dw 2.0 output application/json --- payload]" batchSize="${claims.plateTransfer.batch.count}">
+
+								<!-- CLAIM CURRENT VERSION -->
+								<ee:transform doc:name="SetVars" doc:id="fc0346cc-4678-4e82-9ca3-1182c4604491">
+									<ee:variables>
+										<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+											output application/java
+											---
+											'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' Claim Current Version Query' ]]>
+										</ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+								<flow-ref doc:name="StartDurationLog" doc:id="a6788cb3-828c-4e0a-a7f0-39760e8bc6bd" name="startDurationLogSubFlow" />
+								<db:select doc:name="ClaimCurrentVersion" doc:id="f20f4fd7-f9b6-4b13-a907-7bdf5f3c0dbe" config-ref="azureSqlDatabaseConfig"
+								target="claimCurrVersion">
+									<db:sql><![CDATA[${db.query.select.claimCurrentVersion}]]></db:sql>
+									<db:input-parameters><![CDATA[#[{
+										claimNo: payload.CLAIM_NUMBER,
+										orgUnitId: payload.ORG_UNIT_ID }] ]]></db:input-parameters>
+								</db:select>
+								<flow-ref doc:name="EndDurationLog" doc:id="87fe0157-1d0e-47aa-9b57-8312d5a2e10d" name="endDurationLogSubFlow" />
+
+								<!-- CLAIM FULL SELECT -->
+								<ee:transform doc:name="SetVars" doc:id="7b2301fd-d197-43d5-b6d9-205109f5dc23">
+									<ee:variables>
+										<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+											output application/java
+											---
+											'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' Claim Full Select Store Procedure' ]]>
+										</ee:set-variable>
+										<ee:set-variable variableName="claimNumber"><![CDATA[%dw 2.0
+											output application/java
+											---
+											payload.CLAIM_NUMBER ]]>
+										</ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+								<flow-ref doc:name="StartDurationLog" doc:id="daf5a6c5-d08c-421c-937d-2ab521df5144" name="startDurationLogSubFlow" />
+								<db:stored-procedure doc:name="ClaimFullSelect" doc:id="544d30d3-0882-45f1-b0d8-4240aef232fa" config-ref="azureSqlDatabaseConfig"
+								target="claimFullSelect">
+									<db:sql><![CDATA[${db.query.sp.auditClaimFullSelect}]]></db:sql>
+									<db:input-parameters><![CDATA[#[{
+										claimNumber: payload.CLAIM_NUMBER,
+										versionNumber: (vars.claimCurrVersion[0].CURRENT_VERSION as Number) default payload.VERSION_NUMBER,
+										org_id: payload.PARENT_ORG_UNIT_ID,
+										branch_id: payload.BRANCH_ID default p('account.okta.branchId'),
+										org_unit_id: payload.ORG_UNIT_ID,
+										orgUnitIdActual: payload.ORG_UNIT_ID,
+										contactType: 'D' }]]]></db:input-parameters>
+								</db:stored-procedure>
+								<flow-ref doc:name="EndDurationLog" doc:id="2de677dd-b3df-40aa-bf1d-46a4f60d475b" name="endDurationLogSubFlow" />
+
+								<!-- UPDATE CLAIM REQUEST -->
+								<ee:transform doc:name="UpdateClaimReq" doc:id="4956f758-d4d6-4e8c-be7e-82006a0f27fb">
+									<ee:message>
+										<ee:set-payload resource="dwl/claims/ukvdUpdateReq.dwl" />
+									</ee:message>
+									<ee:variables>
+										<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+											output application/java
+											---
+											'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' STEP 2 - CLAIM NUMBER: ' ++ vars.claimNumber ++ ' VERSION: ' ++
+											(vars.claimCurrVersion[0].CURRENT_VERSION) ++ ' PROCESSED FOR PLATE TRANSFER PROCESS']]>
+										</ee:set-variable>
+										<ee:set-variable variableName="ptProcess"><![CDATA[%dw 2.0
+											output application/java
+											---
+											true ]]>
+										</ee:set-variable>
+									</ee:variables>
+								</ee:transform>
+								<try>
+									<flow-ref doc:name="UpdateClaim" doc:id="6c3b85b4-78cf-4ea3-a145-9dcdd5f1ec75" name="updateClaimSubFlow" />
+									<error-handler>
+										<on-error-continue type="ANY">
+											<flow-ref doc:name="CaptureError" doc:id="940b3111-75a1-4a87-a395-4020033eab55" name="captureErrorSubFlow" />
+										</on-error-continue>
+									</error-handler>
+								</try>
+								<flow-ref doc:name="MsgLog" doc:id="2cf2fd30-a032-4d53-8332-bf351c671e3e" name="commonLoggingMessageSubFlow" />
+							</foreach>
+							<error-handler>
+								<on-error-continue type="ANY">
+									<flow-ref doc:name="CaptureError" doc:id="354bd736-ae63-468c-8587-499eef1d73f5" name="captureErrorSubFlow" />
+									<ee:transform doc:name="ErrorMessage" doc:id="40da3326-538a-42ae-b054-5cec7bbc13af">
+										<ee:variables>
+											<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+												output application/java
+												---
+												'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' STEP 2 - CLAIM NUMBER: ' ++ vars.claimNumber ++ ' VERSION: '
+												++ (vars.claimCurrVersion[0].CURRENT_VERSION) ++ ' FAILED FOR PLATE TRANSFER PROCESS' ]]>
+											</ee:set-variable>
+										</ee:variables>
+									</ee:transform>
+									<flow-ref doc:name="MsgLog" doc:id="85f1c45a-0315-4b0d-b970-9216ef904a2c" name="commonLoggingMessageSubFlow" />
+								</on-error-continue>
+							</error-handler>
+						</try>
+					</batch:aggregator>
+				</batch:step>
+
+				<!-- GET FAILURES -->
+				<batch:step name="GetFailuresBatchStep" doc:id="e4531146-131f-4606-9412-1bd3a8181c4e" acceptExpression="#[!isEmpty(vars.errorRecords)]">
+
+					<!-- SERVICE NOW REQUEST -->
+					<ee:transform doc:name="SnowReq" doc:id="1c0ac2ac-a5ea-4fd2-bedb-581f2bc504f2">
+						<ee:message>
+							<ee:set-payload resource="dwl/scheduler/ukvdBatchSnowReq.dwl" />
+						</ee:message>
+					</ee:transform>
+					<try>
+						<flow-ref doc:name="CreateSnowTicket" doc:id="bec421b0-75ef-486d-be7b-442fed71f65a" name="createSnowTicketSubFlow" targetValue="#[%dw 2.0 output application/java --- payload.ticketId]" target="ticketId"/>
+						<error-handler>
+							<on-error-continue type="ANY">
+								<flow-ref doc:name="CaptureError" doc:id="e5d41bbd-fbaa-4049-887d-e3d5efe7f208" name="captureErrorSubFlow" />
+							</on-error-continue>
+						</error-handler>
+					</try>
+
+					<!-- EMAIL REQUEST -->
+					<parse-template doc:name="ParseAlertEmailTemplate" doc:id="b3196a9c-8809-4bc7-a109-e7d99295d1f8" location="templates/claims/ukvdErrorEmail.htm"
+					target="errorRecordsHtml" />
+					<ee:transform doc:name="ErrorEmailReq" doc:id="8ced69d1-9f08-4696-98af-97566a25e29c">
+						<ee:message>
+							<ee:set-payload resource="dwl/scheduler/ukvdBatchErrorEmailReq.dwl" />
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+								output application/java
+								---
+								'BATCH JOB: ' ++ vars.batchJobInstanceId ++ ' STEP 3 - FAILURE EMAIL' ]]>
+							</ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<flow-ref doc:name="SendEmail" doc:id="123c1236-d642-4575-88cc-18f2f68d2e54" name="sendEmailSubFlow" />
+					<flow-ref doc:name="MsgLog" doc:id="0a98cdbc-7fce-4a42-8651-dfdbf6d02362" name="commonLoggingMessageSubFlow" />
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete>
+				<!-- EMAIL REQUEST -->
+				<ee:transform doc:name="EmailReq" doc:id="50667a57-6e09-43fd-8f86-3c3f0b143673">
+					<ee:message>
+						<ee:set-payload resource="dwl/scheduler/ukvdBatchEmailReq.dwl" />
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="SendEmail" doc:id="5509e6a2-d34f-4db8-aac4-b41d871922e1" name="sendEmailSubFlow" />
+			</batch:on-complete>
+		</batch:job>
+	</sub-flow>
+
+</mule>
