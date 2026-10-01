@@ -1,0 +1,7 @@
+{
+    "errorDetails"  : {
+        "errType": "UNSUPPORTED_MEDIA_TYPE",
+        "errDescription" : "Unsupported media type",
+        "errMessage" : "Unsupported media type"
+    }
+}
