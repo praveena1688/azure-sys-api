@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:java="http://www.mulesoft.org/schema/mule/java" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+	<!-- ALERTS EMAIL STATUS SCHEDULER FLOW -->
+	<flow name="alertsSchedulerFlow" doc:id="4c08de9c-349e-4e93-b4e3-2b1786037871">
+		<scheduler doc:name="Alerts" doc:id="08058a7a-5276-4379-9d92-963a6964b656" disallowConcurrentExecution="true">
+			<scheduling-strategy>
+				<fixed-frequency frequency="${scheduler.alerts.frequency}" startDelay="${scheduler.alerts.startDelay}" timeUnit="MINUTES" />
+			</scheduling-strategy>
+		</scheduler>
+		<ee:transform doc:name="Entity" doc:id="bbaca168-c0ff-47b9-9551-aac1d3f49001">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'alertsVMPublish']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<vm:publish doc:name="alertPublish" doc:id="5413bd90-47b0-4add-86b3-b01c155838a2" config-ref="vmConfig" sendCorrelationId="AUTO" queueName="alertsMailStatusQueue" />
+		<ee:transform doc:name="LogMsg" doc:id="493a4a8e-5816-4171-96cc-7f6204c0fea4">
+			<ee:variables>
+				<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="ResLog" doc:id="99435238-1e83-4581-b8f5-7b63e030fc69" name="commonLoggingExitSubFlow" />
+	</flow>
+
+	<flow name="alertsStatusEmailProcessFlow" doc:id="9931fe77-575d-4c73-9378-d6033489fc69">
+		<vm:listener doc:name="alertsEmailStatus" doc:id="da6dd4f5-5190-4ad2-bf8e-0fdf8b88bae0" config-ref="vmConfig" numberOfConsumers="1" queueName="alertsMailStatusQueue"
+		timeout="2" timeoutUnit="MINUTES" primaryNodeOnly="true" />
+		<ee:transform doc:name="Entity" doc:id="bd5dd20d-fd53-44d0-848e-1102c3af9be1">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'alertsStatusEmailProcess']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="txnId"><![CDATA[%dw 2.0
+					output application/json
+					---
+					(now() >> 'GMT') as LocalDateTime {format: "yyyyMMddHHmmss"}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'Scheduler - Alerts Status Email']]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="dc1e9b60-4d24-4704-8577-4faa3e42432b" name="commonLoggingEntrySubFlow" />
+		<db:stored-procedure doc:name="AlertsFromWatermark" doc:id="1c607c3d-4830-4086-a3b9-4e1aa2d84d68" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[#[p('db.query.sp.alertsMailDetails')]]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				env: Mule::p('mule_env'),
+				maxAlerts: Mule::p('claims.alerts.mail.maxAlerts') default 20
+			}]]]></db:input-parameters>
+		</db:stored-procedure>
+		<flow-ref doc:name="EndDurationLog" doc:id="58d4bc4b-ea87-4afb-9f05-66d3a7308018" name="endDurationLogSubFlow" />
+		<choice doc:name="isValidAlert" doc:id="800a3eb3-77a4-469c-b8c0-62a4e6a3fa7d" >
+			<when expression="#[payload.resultSet1[0].ErrorNumber != null]">
+				<raise-error doc:name="forInvalidDBResonse" doc:id="d8bb27fb-b568-496f-8186-c90469bcbb45" type="ALERT:INVALID_DB_RESPONSE"
+				description="INVALID RESPONSE FROM DB FOR ALERTS WATERMARK FOR ALERT MAILS"/>
+			</when>
+		</choice>
+		<choice doc:name="hasMoreAlerts" doc:id="65640a3f-23ca-4f6d-9959-d8b3ec54de4b">
+			<when expression="#[ (!isEmpty(payload.resultSet1)) and (!isBlank(payload.resultSet1[0].ALERTDETAILS)) ]">
+				<ee:transform doc:name="EmailWaterMarkVar" doc:id="486abf97-74b3-4274-b6a9-6a8dc049bbd4">
+					<ee:variables>
+						<!-- ee:set-variable variableName="emailAddresses": CDATA[%dw 2.0
+							output application/json
+							- - -
+							read(payload.resultSet1[0].ALERTEMAILS default "{}", "application/json").alertEmails default []]
+							(disabled) -->
+						<ee:set-variable variableName="waterMark"><![CDATA[%dw 2.0
+							output application/json
+							---
+							read(payload.resultSet1[0].LASTWATERMARK default "{}", "application/json").alertWaterMark[0].fromWatermark default "0"]]>
+						</ee:set-variable>
+						<ee:set-variable variableName="pendingAlerts"><![CDATA[%dw 2.0
+							output application/json
+							---
+							read(payload.resultSet1[0].PENDINGALERTS default "{}", "application/json").totalAlerts[0].pendingAlerts default 0]]>
+						</ee:set-variable>
+						<ee:set-variable variableName="newWaterMark"><![CDATA[%dw 2.0
+							output application/json
+							---
+							(((( read(payload.resultSet1.ALERTDETAILS[0],'application/json').alertDetails) filter (!isBlank($.alertId)))
+							maxBy ((item) -> item.alertId)).alertId) default vars.waterMark ]]>
+						</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<set-payload value='#[ (read(payload.resultSet1[0].ALERTDETAILS default "{}", "application/json").alertDetails distinctBy $.alertId) default []]'
+				doc:name="SetAlertDetails" doc:id="fc6b8d1c-b557-4540-a7c9-1dd6c4875838" />
+				<flow-ref doc:name="AlertsStatusEmailProcessSubFlow" doc:id="a7917b5d-6401-4d85-bd31-5a649749817d" name="alertsStatusEmailProcessSubFlow" />
+			</when>
+			<otherwise>
+				<ee:transform doc:name="LogMsg" doc:id="f9547be3-59bc-42e7-99db-d7976f425d8d">
+					<ee:variables>
+						<ee:set-variable resource="dwl/logMsg.dwl" variableName="logMsg" />
+						<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+							output application/java
+							---
+							'NO MORE ALERTS AVAILABLE OR PENDING AFTER ALERT ID' ]]>
+						</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="MessageLog" doc:id="4737ec51-cf13-4327-b771-44a4ebdddae4" name="commonLoggingPayloadSubFlow" />
+				<flow-ref doc:name="ResLog" doc:id="c46117b6-67e7-4cc8-84b5-39651cc1d47f" name="commonLoggingExitSubFlow" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<sub-flow name="alertsStatusEmailProcessSubFlow" doc:id="9def293b-5324-444b-bdd5-bb8d44a8e027">
+		<ee:transform doc:name="Entity" doc:id="6789e245-9c6f-46a4-9d54-1e7ce246c3f0">
+			<ee:variables>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'alertsStatusEmailProcessSubFlow']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.claims')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="sentAlertIds"><![CDATA[%dw 2.0
+					output application/java
+					---
+					[] ]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="sizeOfPayload"><![CDATA[%dw 2.0
+					output application/json
+					---
+					sizeOf(payload) as Number default 0]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'PENDING ALERTS: ' ++ (vars.PENDINGALERTS default 0) ++ ' LAST WATERMARK: ' ++ (vars.waterMark default 0) ++ ' NEW WATERMARK: '
+					++ (vars.newWaterMark default 0) ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="e3fe5bba-7b33-4786-8e5e-215f78546677" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="MessageLog" doc:id="1e7ec717-222c-4289-a1ce-9dad20209b20" name="commonLoggingPayloadSubFlow" />
+
+		<try doc:name="Try" doc:id="a028f848-7a14-458b-bf51-1311efb94e63">
+			<foreach doc:name="ForEachAlertId" doc:id="0101409e-2a8d-40a0-bf80-88fd604479d4" collection='#[payload]'>
+				<!-- <choice doc:name="IsEmailAvailable" doc:id="3237d330-6d73-4e89-89bb-1e41ae644bf9">
+					<when expression="#[vars.emailAddresses.PROD_CODE contains payload.PROD_CODE]"> -->
+
+				<try doc:name="Try" doc:id="fc387c11-5321-420b-8401-2e43083db222">
+
+					<!-- EMAIL CONTACT DETAILS -->
+					<flow-ref doc:name="StartDurationLog" doc:id="81de0ad2-ab19-493e-9e9c-74b76cc699cf" name="startDurationLogSubFlow" />
+					<db:select doc:name="alertEmailContact" doc:id="7813eebf-d5d8-4488-93e0-db9d20aae5b8" config-ref="azureSqlDatabaseConfig" target="emailContacts">
+						<db:sql><![CDATA[#[p('db.query.select.alertEmailContact')]]]></db:sql>
+						<db:input-parameters><![CDATA[#[{
+							ORG_UNIT_ID: payload.ORG_UNIT_ID,
+							PROD_CODE: "%" ++ (payload.PROD_CODE default "")++"%"}]]]></db:input-parameters>
+					</db:select>
+					<flow-ref doc:name="EndDurationLog" doc:id="1b5b82b0-71f6-4e11-ae38-1e453a13a131" name="endDurationLogSubFlow" />
+
+					<ee:transform doc:name="AlertId" doc:id="ddc53be3-f7be-4677-b67c-f27df58311f8">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+								output application/java
+								---
+								[payload]]]>
+							</ee:set-payload>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="alertId"><![CDATA[%dw 2.0
+								output application/java
+								---
+								if (payload.PROD_CODE == 'MI800') (payload.fileName) else (payload.alertId) ]]>
+							</ee:set-variable>
+							<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+								output application/java
+								---
+								'ALERT CATEGORY: ' ++ (if (payload.PROD_CODE == 'MI800') (payload.fileName) else (payload.alertId)) ++ ' FOR PRODUCT CODE: '
+								++ (payload.PROD_CODE default '') ]]>
+							</ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+
+					<flow-ref doc:name="StartDurationLog" doc:id="799ff874-f1bb-4589-89a9-d3d49bb776fa" name="startDurationLogSubFlow" />
+					<flow-ref doc:name="AlertCategorySubFlow" doc:id="ccd6b58d-d0ef-4267-bc36-ed171b170f1c" name="alertCategorySubFlow" />
+					<flow-ref doc:name="EndDurationLog" doc:id="b0b69004-a4cd-4122-9570-ae676b897d19" name="endDurationLogSubFlow" />
+
+					<choice doc:name="IsAlertCategoryAvailable" doc:id="c1877229-592e-42c9-add2-38cb9552f656">
+						<when expression="#[ (sizeOf(vars.alertCategory default []) > 0) or (payload[0].PROD_CODE == 'MI307') or (payload[0].PROD_CODE == 'MI318') ]">
+							<ee:transform doc:name="AlertCategory" doc:id="08bb3a6d-95e5-42e7-af8a-9a3decf78db4">
+								<ee:variables>
+									<ee:set-variable variableName="alertDetails"><![CDATA[%dw 2.0
+										output application/java
+										---
+										payload[0] ]]>
+									</ee:set-variable>
+									<ee:set-variable variableName="alertCategory"><![CDATA[%dw 2.0
+										output application/java
+										var acSize = sizeOf(vars.alertCategory default []) as Number
+										var matchLimit = (p('claims.matches.alertEmailMatchLimit') as Number) default 0
+										var vrm = if ( (payload[0].PROD_CODE == 'MI307') or (payload[0].PROD_CODE == 'MI318') ) payload[0].vrm else ''
+										var vin = if ( (payload[0].PROD_CODE == 'MI307') or (payload[0].PROD_CODE == 'MI318') ) payload[0].vin else ''
+										var cherishVrm = if ( ((!isBlank(vrm)) or (!isBlank(vin))) and ((payload[0].PROD_CODE == 'MI307') or (payload[0].PROD_CODE == 'MI318')) )
+										---
+										if ( (matchLimit > 0) and (acSize > matchLimit) and ((payload[0].PROD_CODE != 'MI307')
+										and (payload[0].PROD_CODE != 'MI318')) ) (vars.alertCategory[0 to (matchLimit - 1)])
+										else if ( (payload[0].PROD_CODE == 'MI307') or (payload[0].PROD_CODE == 'MI318') )  (cherishVrm default [])
+										else vars.alertCategory ]]>
+									</ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+							<ee:transform doc:name="AlertCategory" doc:id="8414368d-be55-4905-bbf2-0b86b571813a">
+								<ee:variables>
+									<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+										output application/java
+										---
+										'PARSING TEMPLATE FOR ALERT ID: ' ++ vars.alertId ++ ' OF ALERT CATEGORY SIZE : ' ++ sizeOf(vars.alertCategory default []) ]]>
+									</ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+							<flow-ref doc:name="MessageLog" doc:id="1682c3da-7402-4d3b-b964-664fd100f851" name="commonLoggingPayloadSubFlow" />
+							<parse-template doc:name="ParseAlertEmailTemplate" doc:id="bb3ced10-9329-442b-8e06-0ec898074728"
+							location="templates/claims/alertSchedulerEmail.htm" />
+
+							<!-- EMAIL REQUEST -->
+							<ee:transform doc:name="EmailRequest" doc:id="0d039f7d-af33-4fdd-8984-4ff32aa43547">
+								<ee:message>
+									<ee:set-payload resource="dwl/scheduler/alertEmailReq.dwl" />
+								</ee:message>
+							</ee:transform>
+							<flow-ref doc:name="SendEmail" doc:id="a544d261-8a50-40e4-b47c-06850bc3d9af" name="sendEmailSubFlow" />
+
+							<ee:transform doc:name="SentAlertIds" doc:id="626352da-e8b3-4c0b-9514-c0e206746a07">
+								<ee:variables>
+									<ee:set-variable variableName="sentAlertIds"><![CDATA[%dw 2.0
+										output application/java
+										---
+										vars.sentAlertIds << vars.alertDetails.alertId]]>
+									</ee:set-variable>
+									<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+										output application/java
+										---
+										'EMAILS SEND FOR ALERT ID: ' ++ vars.alertId ]]>
+									</ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+							<flow-ref doc:name="MessageLog" doc:id="1f53f014-f558-4318-9628-fa68893f474b" name="commonLoggingPayloadSubFlow" />
+						</when>
+						<otherwise>
+							<ee:transform doc:name="NoAlertCategory" doc:id="c29e4d20-5c7c-401f-a646-8be5bdec1a60">
+								<ee:variables>
+									<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+										output application/java
+										---
+										'NO ALERT CATEGORY FOUND FOR ALERT ID: ' ++ vars.alertId ]]>
+									</ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+							<flow-ref doc:name="MessageLog" doc:id="f4dced1c-dc48-4ce4-a155-aef6625d83ce" name="commonLoggingPayloadSubFlow" />
+						</otherwise>
+					</choice>
+					<error-handler>
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="3f907a7-c6e7-4384-b629-ff6bbf20e0a7">
+							<ee:transform doc:name="EmailRequestFailedEmptyPayload" doc:id="5503b198-8585-48ca-ab95-802a24c592c0">
+								<ee:message >
+									<ee:set-payload ><![CDATA[%dw 2.0
+										output application/json
+										---
+										{
+										}]]>
+									</ee:set-payload>
+								</ee:message>
+								<ee:variables>
+									<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+										output application/java
+										---
+										'ALERT EMAIL REQUEST FAILED: ' ++ (vars.alertId default "MISSED ALERT ID") ]]>
+									</ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+							<flow-ref doc:name="ErrorLog" doc:id="e2f68339-4c17-4b5f-89e1-5f11c0ddce17" name="commonLoggingErrorSubFlow" />
+						</on-error-continue>
+					</error-handler>
+				</try>
+				<!-- /when (disabled)
+				otherwise:
+					ee:transform doc:name="message" doc:id="94f1761b-4330-4433-bd7c-37fec03d153a":
+						ee:set-variable variableName="message": CDATA[%dw 2.0
+								output application/java
+								- - -
+								'NO EMAIL ADDRESS FOR ALERT CODE: ' ++ payload.PROD_CODE ]
+					flow-ref doc:name="MessageLog" doc:id="d72d64e5-5dd7-47c8-ab33-4f45b943d726" name="commonLoggingPayloadSubFlow"
+				/otherwise /choice (disabled) -->
+
+				<choice doc:name="isAlertIdNotBlank">
+					<when expression="#[!isBlank(vars.alertId)]">
+						<!-- UPDATE ALERT WATERMARK -->
+						<flow-ref doc:name="StartDurationLog" doc:id="bf7efda9-ad54-4e69-a91f-cea5d3bc88e8" name="startDurationLogSubFlow" />
+						<db:update doc:name="UpdateWatermark" doc:id="c9905b9c-246e-46ba-aa02-2512e919d26d" config-ref="azureSqlDatabaseConfig">
+							<db:sql><![CDATA[#[p('db.query.update.objectStore')]]]></db:sql>
+							<db:input-parameters><![CDATA[#[{
+								osValue: vars.alertId,
+								updatedBy: p('secure::api.db.userId'),
+								osKey: 'alertsStatusEmailWatermark',
+								env: Mule::p('mule_env') }]]]></db:input-parameters>
+						</db:update>
+						<flow-ref doc:name="EndDurationLog" doc:id="4819edd8-1ae9-4cf8-b760-74e4dd10b38d" name="endDurationLogSubFlow" />
+
+						<!-- UPDATE ALERT STATUS -->
+						<flow-ref doc:name="StartDurationLog" doc:id="b5a3b325-95f9-4d49-a1c6-7dc867d10a45" name="startDurationLogSubFlow" />
+						<db:update doc:name="UpdateAlertStatus" doc:id="8c8911c9-2bbd-461b-b76f-b0d0c6af69d6" config-ref="azureSqlDatabaseConfig">
+							<db:sql><![CDATA[#[p('db.query.update.alertStatus')]]]></db:sql>
+							<db:input-parameters><![CDATA[#[{
+								alertId: vars.alertId,
+								statusCode: 'N',
+								updatedBy: p('secure::api.db.userId') }]]]></db:input-parameters>
+						</db:update>
+						<flow-ref doc:name="EndDurationLog" doc:id="9fa32446-3aae-4968-b760-95f97c3bb40b" name="endDurationLogSubFlow" />
+					</when>
+				</choice>
+			</foreach>
+			<error-handler>
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="1c1df7f1-3418-4af8-a676-1c9751f8b193">
+					<ee:transform doc:name="LoopError" doc:id="f305d29e-ccfd-48f9-ae71-054a47103947">
+						<ee:variables>
+							<ee:set-variable variableName="message"><![CDATA[%dw 2.0
+								output application/java
+								---
+								'FOR EACH ALERTID ERROR. ALERT WATERMARK UPDATE' ]]>
+							</ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+					<flow-ref doc:name="ErrorLog" doc:id="cf589d03-35e3-4ac9-a4d5-975d6b6ae9b7" name="commonLoggingErrorSubFlow" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</sub-flow>
+
+</mule>
