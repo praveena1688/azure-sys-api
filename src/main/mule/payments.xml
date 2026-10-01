@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:java="http://www.mulesoft.org/schema/mule/java" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+	http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+	http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+	http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+	http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+	http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+	<sub-flow name="createPaymentsReceiptSubFlow" doc:id="a3618f46-1491-49b9-9048-5bbe700452b6">
+		<ee:transform doc:name="Entity" doc:id="627487fe-7896-4289-aa32-e5bc6ebaa5f6">
+			<ee:variables>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'createPaymentsReceipt']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.payments')]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="e54c07ec-f803-4bad-a857-1199226a4857" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="86f7c698-aae5-4f6c-83c0-b2010501accd" name="userDetailsSubFlow" target="userIdDetails" />
+		<ee:transform doc:name="PaymentAuditEnquiry" doc:id="a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d">
+			<ee:variables>
+				<ee:set-variable variableName="payment"><![CDATA[%dw 2.0
+					output application/java
+					---
+					payload.payments]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="resultURLs"><![CDATA[%dw 2.0
+					output application/java
+					---
+					payload.resultURLs]]>
+				</ee:set-variable>
+				<ee:set-variable resource="dwl/payments/paymentAuditEnquiryRequest.dwl" variableName="paymentAuditEnquiryRequest" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartDurationLog" doc:id="0949c097-aa54-4900-bc25-981f08b94c14" name="startDurationLogSubFlow" />
+		<db:stored-procedure doc:name="PaymentReceipt" doc:id="84f4be74-3734-41b6-9f24-d07f2222ba11" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.sp.paymentReceipt}]]></db:sql>
+			<db:input-parameters><![CDATA[#[vars.paymentAuditEnquiryRequest]]]></db:input-parameters>
+		</db:stored-procedure>
+		<set-variable value="#[payload.resultSet1[0].ENQUIRY_ID]" doc:name="Enquiry Id" doc:id="83f49aa9-22a6-4df1-adab-4738aa518d04" variableName="enquiryId" />
+		<!-- WORLD PAY REQUEST -->
+		<ee:transform doc:name="WorldpayRequest" doc:id="e6513f5b-2bc2-438c-993d-dfd263d613fc">
+			<ee:message>
+				<ee:set-payload resource="dwl/payments/worldPayPaymentRequest.dwl" />
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="systemapi"><![CDATA[%dw 2.0
+					output application/java
+					---
+					{
+						host: p('secure::systemapi.utility.host'),
+						port: p('secure::systemapi.utility.port'),
+						basePath: p('systemapi.utility.basePath') default '',
+						entityPath: p('systemapi.utility.path.worldpay'),
+						clientId: p('secure::systemapi.utility.clientId'),
+						clientSecret: p('secure::systemapi.utility.clientSecret')
+					}]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="httpMethod"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'POST']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.systemapi.utility.worldpay')]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<!-- UTILITY API WORLDPAY -->
+		<flow-ref doc:name="CallWorldpayAPI" doc:id="acf79c00-ab47-484b-8362-f3c91c6c92e7" name="systemApiCallSubFlow" target="worldpayResponse" />
+		<ee:transform doc:name="WorldpayResponse" doc:id="b7c5d6e7-f8a9-4001-8203-a1b2c3d4e5f6">
+			<ee:message>
+				<ee:set-payload resource="dwl/payments/worldPayPaymentResponse.dwl"/>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="EndDurationLog" doc:id="acf79c00-ab47-484b-8362-f3c91c6c92e8" name="endDurationLogSubFlow" />
+		<flow-ref doc:name="ResLog" doc:id="07a68deb-adde-44a0-b9a3-724147b25b09" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+	<sub-flow name="updatePaymentsReceiptSubFlow" doc:id="927b1801-f4f9-4c49-a64e-e019f2277f9c">
+		<ee:transform doc:name="Entity" doc:id="142155eb-13f3-46f6-866f-15c1c973f5ca">
+			<ee:variables>
+				<ee:set-variable variableName="userId"><![CDATA[%dw 2.0
+					output application/java
+					---
+					if (lower(attributes.headers.'userId') == p('account.dummy.userId')) vars.clientId else lower(attributes.headers.'userId')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="entity"><![CDATA[%dw 2.0
+					output application/java
+					---
+					'updatePaymentsReceipt']]>
+				</ee:set-variable>
+				<ee:set-variable variableName="extApiName"><![CDATA[%dw 2.0
+					output application/java
+					---
+					p('external.azuresql.payments')]]>
+				</ee:set-variable>
+				<ee:set-variable variableName="apiRequest"><![CDATA[%dw 2.0
+					output application/java
+					---
+					payload ]]>
+				</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="StartLog" doc:id="9f9326a4-2a02-43f1-b747-d883e913713d" name="commonLoggingEntrySubFlow" />
+		<flow-ref doc:name="CheckUserDetails" doc:id="55bb2129-dc68-4ad3-ae4b-34bb7e9c71ff" name="userDetailsSubFlow" target="userIdDetails" />
+		<flow-ref doc:name="StartDurationLog" doc:id="e9e4259d-c7eb-4896-a095-f05146fffbac" name="startDurationLogSubFlow" />
+		<db:update doc:name="PaymentReceipt" doc:id="b1607ac6-dfa8-4168-b0ff-b570f8fa51fd" config-ref="azureSqlDatabaseConfig">
+			<db:sql><![CDATA[${db.query.update.updatePaymentStatus}]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+				refNumber: vars.apiRequest.payments.errorRefNumber,
+				status: vars.apiRequest.payments.status,
+				enquiryId: vars.apiRequest.payments.enquiryId }]]]>
+			</db:input-parameters>
+		</db:update>
+		<ee:transform doc:name="WorldpayResponse" doc:id="b08a39a4-2fb2-48d5-9a19-830f83480243">
+			<ee:message>
+				<ee:set-payload resource="dwl/payments/worldPayPaymentResponse.dwl"/>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="logMsg" resource="dwl/logMsg.dwl" />
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="EndDurationLog" doc:id="049dfa89-929e-4859-8fe4-b835994594c7" name="endDurationLogSubFlow" />
+		<flow-ref doc:name="ResLog" doc:id="be4e3c19-d04a-4fe4-95ba-78cd232fe10d" name="commonLoggingExitSubFlow" />
+	</sub-flow>
+
+</mule>
