@@ -1,0 +1,23 @@
+#%RAML 1.0 DataType
+
+displayName: Address Request
+type: object
+properties:
+  addressLine1:
+    type: string
+    required: true
+  addressLine2:
+    type: string | nil
+    required: false
+  city:
+    type: string
+    required: true
+  county:
+    type: string | nil
+    required: false
+  postcode:
+    type: string
+    required: true
+  country:
+    type: string | nil
+    required: false

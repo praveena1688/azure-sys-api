@@ -1,0 +1,16 @@
+#%RAML 1.0 Library
+
+usage:
+
+uses:
+  errorJsonResponse: !include examples/errorResponse.json
+
+types:
+  errorResponse: !include dataTypes/requestTypes/errorResponse.raml
+
+traits:
+  jwt: !include traits/jwtHeader.raml
+  pagination: !include traits/paginationQueryParams.raml
+  clientCredentials: !include traits/clientCredentialsHeader.raml
+  dateSearch: !include traits/dateTimeQueryParams.raml
+  errorResponses: !inlcude traits/errorResponse.raml

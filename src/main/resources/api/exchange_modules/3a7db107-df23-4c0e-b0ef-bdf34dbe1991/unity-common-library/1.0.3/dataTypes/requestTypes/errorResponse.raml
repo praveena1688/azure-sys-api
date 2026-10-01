@@ -1,0 +1,21 @@
+#%RAML 1.0 DataType
+displayName: Error Response
+description: Custom error response object
+
+type: object
+properties:
+  errorDetails:
+    type: object
+    properties:
+      errType:
+        type: string
+        required: true
+        example: APIKIT:BAD_REQUEST
+      errDescription:
+        type: string
+        required: false
+        example: Bad Request
+      errMessage:
+        type: string
+        required: false
+        example: Required Header Missing

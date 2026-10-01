@@ -1,0 +1,7 @@
+{
+    "errorDetails"  : {
+        "errType": "APIKIT:BAD_REQUEST",
+        "errDescription" : "TECHNICAL",
+        "errMessage" : "Required header 'X-TRANSACTION-ID' not specified"
+    }
+}

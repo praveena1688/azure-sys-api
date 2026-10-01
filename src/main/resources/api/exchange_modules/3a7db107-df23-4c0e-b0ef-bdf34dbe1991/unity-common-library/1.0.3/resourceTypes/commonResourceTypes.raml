@@ -1,0 +1,57 @@
+#%RAML 1.0 Library
+
+#Here are the functions available for parameter transformation: !singularize,!pluralize,!uppercase,!lowercase,!uppercamelcase,
+#!lowercamelcase,!upperunderscorecase,!lowerunderscorecase,!upperhyphencase,!lowerhyphencase
+
+resourceTypes:
+  getCollection:
+    description: A Collection of <<resourcePathName>> API
+    get:
+      description: This API is used to retrieve all details about <<resourcePathName>>
+      is: [clientCredentials,pagination,errorResponses]
+      responses:
+        200:
+          body:
+            application/json:
+              example: <<getResponse>>
+
+  postCollection:
+    description: A Collection of <<resourcePathName>> API
+    post:
+      description: A Collection of <<resourcePathName>> API
+      is: [clientCredentials,errorResponses]
+      body:
+        application/json:
+          type: <<resourcePathName | !lowercase>>
+          example: <<postRequest>>
+      responses:
+        200:
+          body:
+            application/json:
+              example: <<postResponse>>
+
+  putCollection:
+    description: A Collection of <<resourcePathName>> API
+    put:
+      description: A Collection of <<resourcePathName>> API
+      is: [clientCredentials,errorResponses]
+      body:
+        application/json:
+          type: <<resourcePathName | !uppercase>>
+          example: <<putRequest>>
+      responses:
+        200:
+          body:
+            application/json:
+              example: <<putResponse>>
+
+  deleteCollection:
+    description: A Collection of <<resourcePathName>> API
+    delete:
+      description: A Collection of <<resourcePathName>> API
+      is: [clientCredentials,errorResponses]
+      responses:
+        200:
+          body:
+            application/json:
+              example: <<deleteResponse>>
