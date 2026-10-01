@@ -1,0 +1,53 @@
+api:
+  id: "19235662"
+db:
+  userId: "50574"
+
+# TLS CONFIG
+https:
+  listener:
+    tls:
+      keystore:
+        path: "certificates/wildcard_navigate_mib_org_uk.pfx"
+        keyPassword: "![BA3taqIxXuPsV4v1KRa2ddKDlbsmcrLE]"
+        password: "![BA3taqIxXuPsV4v1KRa2ddKDlbsmcrLE]"
+
+# DATABASE CONFIG
+db:
+  azureSql:
+    host: "unity-prod-uks-sql.database.windows.net"
+    port: "1433"
+    db: "unity-prod-uks-sqldb"
+    username: "![Vao8heZQUejDzwGJ0kk/RDu/9mDzAy71ip4kpm6ccYV25CizKJdENA==]"
+    #password: "![Vh67MhfTZGIIQZJUn677StGYo6F2/Z/IyI2HuIkZHNYL0CsNjz24etDc7aOeAsl9]"
+
+# HTTP REQUEST CONFIG
+systemapi:
+  utility:
+    host: "mib-utility-sys-api"
+    port: "8081"
+    clientId: "![QMwfd1tWCjG5UM1TQl/L1PR1TRWft9RC]"
+    clientSecret: "![eVlD/OAV8dNbgJCxTOiDKJvOxmQdmNtLLugWEzI+DknHGwJDh2mVt6r56Vf3c9TtKvUj6DQWhGSZMXAE7tuhd170G6YbPokW]"
+
+#ALERT EMAIL HREF VALUES
+email:
+  alerts:
+    href:
+      termsAndConditions: ""
+      askmidTermsAndConditions: "https://www.askmid.com/termsofuse.aspx"
+      privacyPolicy: ""
+      claimsById: "https://unity-mid-uks-webapp-app.azurewebsites.net/vehicle-salvage-theft/alerts/"
+      mibWebsite: "https://www.mib.org.uk/make-a-claim/"
+      openInBrowser: ""
+      contactus: "https://enquiry.navigate.mib.org.uk/contact-us"
+
+#WORLD PAY CONFIG
+worldpay:
+  payment:
+    description: "Motors Insurers Bureau Payment"
+    narrative:
+      line1: "line1"
+    merchant:
+      entity: "PO4097811854"
+okta:
+  loginLink: "https://identity.mib.org.uk/user/login"
