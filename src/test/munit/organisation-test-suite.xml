@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xsi:schemaLocation="
+	http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+	http://www.mulesoft.org/schema/mule/munit-tools  http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+	<munit:config name="organisations-test-suite.xml" />
+	<munit:test name="organisations-test-suite-getOrgListSubFlowTest" doc:id="dd74722f-0a2a-4513-9231-a0663243a4e4" description="getOrgListTest">
+		<munit:enable-flow-sources>
+			<munit:enable-flow-source value="roleActionsFlow" />
+			<munit:enable-flow-source value="apiRolesSubFlow" />
+		</munit:enable-flow-sources>
+		<munit:behavior>
+			<munit-tools:mock-when doc:name="APIRoles" doc:id="7a3a87d0-db6b-475c-b2ef-acb6dd2cb01c" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="ApiRoles" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/categories/apiRolesDbResponse.json')]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="UserProfileDatabase" doc:id="97fbc381-e3d0-4860-a869-9240576adb73" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="userByUserIdResultset" attributeName="target" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:variables>
+						<munit-tools:variable key="userByUserIdResultset" value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/userDetailsByUserIdDbResponse.json')]" />
+					</munit-tools:variables>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="UserProfileDatabase" doc:id="c0154952-f17d-4476-a716-e08bf66ff59c" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="userByRoleIdResultset" attributeName="target" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:variables>
+						<munit-tools:variable key="userByRoleIdResultset" value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/userDetailsByRoleIdDbResponse.json')]" />
+					</munit-tools:variables>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="UserProfileDatabase" doc:id="b88e8a34-0c54-4dd7-97a4-1c5693f6f97c" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="UserDetailsByRoleIds" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/userDetailsByRoleIdDbResponse.json')]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="CommsDatabase" doc:id="f87f6804-3819-4d76-b86b-27da73fc3aec" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="RoleActions" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/roleActionsDbResponse.json')]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="CustomerDatabase" doc:id="65106a36-95a7-4bb9-ba93-687747240827" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="GetOrgList" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/organisation/orgListDbResponse.json')]"
+						mediaType="application/java" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+		<munit:execution>
+			<munit:set-event doc:name="Set Event" doc:id="1a6d63c2-88cc-4c01-b86d-31b6988cbed8">
+				<munit:attributes value="#[readUrl('classpath://dwl/organisation/setEventAttributesOrgList.dwl')]" />
+				<munit:variables>
+					<munit:variable key="apiName" value="/api/v1/organisation?limit=10&amp;offset=1" />
+					<munit:variable key="host" value="localhost" />
+					<!-- <munit:variable key="userId" value="kaushik.mukherjee3@wipro.com" /> -->
+					<munit:variable key="scheme" value="https" mediaType="text/plain" />
+					<munit:variable key="pagination" value="#[%dw 2.0 output application/java --- {offset:1,limit:5,relativePath:'/api/v1/organisation'}]"
+						mediaType="application/java" />
+				</munit:variables>
+			</munit:set-event>
+			<flow-ref doc:name="Flow-ref to getOrgListSubFlow" doc:id="40cf6a1a-74b5-4ec6-9930-15bbc8f66824" name="get:\v1\organisations:azure-sys-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert that" doc:id="a2be4b06-cca1-41bc-b00a-f0f50aad5065" is="#[MunitTools::equalTo('U5982')]"
+				expression="#[output application/java --- payload.data.organisationId]" message="Get Organisation List API Test Case Failed" />
+		</munit:validation>
+	</munit:test>
+
+	<munit:test name="organisations-test-suite-getBranchListSubFlowTest" doc:id="c0aa477a-6293-4240-8603-3cac3aa78b79" description="getBranchListTest">
+		<munit:enable-flow-sources>
+			<munit:enable-flow-source value="roleActionsFlow" />
+			<munit:enable-flow-source value="apiRolesSubFlow" />
+		</munit:enable-flow-sources>
+		<munit:behavior>
+			<munit-tools:mock-when doc:name="APIRoles" doc:id="2cada9fb-45a1-4caf-9885-a41f1a55335c" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="ApiRoles" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/categories/apiRolesDbResponse.json')]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="UserProfileDatabase" doc:id="8c2871b6-199a-4f6a-b7e1-ac43efeacf0e" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="userByUserIdResultset" attributeName="target" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:variables>
+						<munit-tools:variable key="userByUserIdResultset"
+							value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/userDetailsByUserIdDbResponse.json') ]" mediaType="application/java" />
+					</munit-tools:variables>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="UserProfileDatabase" doc:id="56f8159e-0f32-47ce-aaeb-27302347a6eb" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="userByRoleIdResultset" attributeName="target" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:variables>
+						<munit-tools:variable key="userByRoleIdResultset"
+							value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/userDetailsByRoleIdDbResponse.json') ]" mediaType="application/java" />
+					</munit-tools:variables>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="UserProfileDatabase" doc:id="bfed0f54-6245-4b31-871d-83a051699dfe" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="UserDetailsByRoleIds" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/userDetailsByRoleIdDbResponse.json')]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="CommsDatabase" doc:id="1b9b725a-abad-4d37-98ed-5b092e0bf470" processor="db:select">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="RoleActions" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/account/roleActionsDbResponse.json')]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when doc:name="BranchListDetails" doc:id="d4bca3fa-3e81-47cb-99a1-a751a8f26d87" processor="db:stored-procedure">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute whereValue="BranchList" attributeName="doc:name" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[%dw 2.0 output application/java --- readUrl('classpath://templates/organisation/orgBranchViewDbResponse.json')]"
+						mediaType="application/java" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+		<munit:execution>
+			<munit:set-event doc:name="Set Event" doc:id="f3936533-f033-4b72-9b46-c57bfbdcdfe7">
+				<munit:attributes value="#[readUrl('classpath://dwl/organisation/setEventAttributesBranchList.dwl')]" />
+				<munit:variables>
+					<munit:variable key="apiName" value="/api/v1/organisation/U0002/branch?limit=10&amp;offset=1" />
+					<munit:variable key="host" value="localhost" />
+					<!-- <munit:variable key="userId" value="kaushik.mukherjee3@wipro.com" /> -->
+					<munit:variable key="scheme" value="https" mediaType="text/plain" />
+					<munit:variable key="pagination" value="#[%dw 2.0 output application/java --- {offset:1,limit:5,relativePath:'/api/v1/organisation/U0002/branch'}]"
+						mediaType="application/java" />
+				</munit:variables>
+			</munit:set-event>
+			<flow-ref doc:name="Flow-ref to getBranchListSubFlow" doc:id="52e2d8ec-6b97-42c3-b61e-ee4523093587" name="get:\v1\organisations\(orgId)\branch:azure-sys-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert that" doc:id="59309f26-22ee-464a-b9b5-9dc13fe0f787" is="#[MunitTools::equalTo('U5313')]"
+				expression="#[output application/java --- payload.data[0].branchList[0].branchId]" message="Get Branch List By Org Id API Test Case Failed" />
+		</munit:validation>
+	</munit:test>
+
+</mule>
