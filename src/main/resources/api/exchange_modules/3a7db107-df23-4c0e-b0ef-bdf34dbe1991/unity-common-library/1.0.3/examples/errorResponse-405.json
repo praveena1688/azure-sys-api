@@ -1,0 +1,7 @@
+{
+    "errorDetails"  : {
+        "errType": "METHOD_NOT_ALLOWED",
+        "errDescription" : "Method not allowed",
+        "errMessage" : "GET /v1/api/sample - Method not allowed"
+    }
+}

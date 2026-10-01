@@ -1,0 +1,7 @@
+{
+    "errorDetails"  : {
+        "errType": "NOT_FOUND",
+        "errDescription" : "Resource not found",
+        "errMessage" : "/v1/api/sample - Resource Not Found"
+    }
+}

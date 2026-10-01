@@ -1,0 +1,7 @@
+{
+    "errorDetails"  : {
+        "errType": "BAD_REQUEST",
+        "errDescription" : "Bad Request",
+        "errMessage" : "Required header 'userID' not specified"
+    }
+}
