@@ -1,0 +1,240 @@
+# APP CONFIG
+app:
+  name: "azure-sys-api-${mule_env}"
+
+log:
+  maskFields: ""
+
+error:
+  message:
+    generic: "Sorry Our Systems are not available right now. Please try again later."
+
+external:
+  azuresql:
+    lookup: "Lookup Database Call"
+    comms: "Comms Database Call"
+    userprofile: "UserProfile Database Call"
+    customer: "Customer Database Call"
+    claims: "Claims Database Call"
+    trans: "Trans Database Call"
+    policies: "Policies Database Call"
+    enquiry: "Enquiry Database Call"
+    drivers: "Permitted Drivers Database Call"
+    insurers: "Insurers Database Call"
+    payments: "Payments Database Call"
+  systemapi:
+    utility:
+      servicenow: "Service Now - Utility System API"
+      ukvd: "UKVD - Utility System API"
+      notifications: "Notification - Utility System API"
+      adls: "ADLS - Utility System API"
+      okta: "OKTA - Utility System API"
+      worldpay: "Worldpay - Utility System API"
+
+feature:
+  enablement:
+    policyHolder:
+      flag: "true"
+      message: "FEATURE NOT ENABLED"
+
+batch:
+  maxFailed: "20"
+  blockSize: "50"
+  maxConcurrency: "10"
+
+#WORLD PAY CONFIG
+worldpay:
+  payment:
+    description: "Motors Insurers Bureau Payment"
+    narrative:
+      line1: "line1"
+    merchant:
+      entity: "PO4097811854"
+
+account:
+  notifications:
+    dateDiff: "90"
+    schedulerStatus: "Active,Scheduled,Archived,Deleted,Draft"
+  #curd:
+    #roleIds: "2,11"
+  admin:
+    roleId: "2"
+  okta:
+    orgId: 'OK001'
+    branchId: 'N0000'
+  dummy:
+    roleId: "1"
+    userId: "dummy@mib.org.uk"
+
+#content:
+  #curd:
+    #roleIds: "2"
+
+users:
+  reminderStatus: "Locked"
+  status:
+    #suspended:
+      #reminder:
+        #total: "90"
+        #frequency: "60,70,89"
+    locked:
+      reminder:
+        total: "90"
+        frequency: "70,80,89"
+
+claims:
+  #search:
+    #roleIds: "2,3,10"
+  #curd:
+    #roleIds: "2,3,5"
+  #delete:
+    #roleIds: "2,3,5"
+  status:
+    insert: "I"
+    update: "A"
+    delete: "D"
+    withdraw: "W"
+    pending: "P"
+    repudiate: "U"
+    protect: "Z"
+    #"E"
+    #"N"
+    #"R"
+
+nonProd:
+  matchLimit: "2"
+  searchLimit: "25"
+  salvageCodeDate: "2017-09-30"
+  reportsCode:
+    amend: "MI230,MI231,MI232,MI233,MI234,MI235,MI236,MI240,MI241"
+    antiFraud: "MI300,MI301,MI302,MI303,MI304,MI306,MI307,MI400"
+    regActivity: "MI220,MI221,MI230,MI231,MI232,MI233,MI234,MI235,MI236,MI240,MI241"
+    searchActivity: "MI210,MI211,M300,MI301,MI400"
+    regPerformance: ""
+    lastLogin: ""
+
+alerts:
+  mail:
+    maxAlerts: "5"
+    product:
+      insert: "MI220"
+      amend: "MI230"
+      withdraw: "MI231"
+      protect: "MI232"
+      delete: "MI240"
+      repudiate: "MI236"
+      theftAlert: "MI301"
+      totalLossAlert: "MI300"
+      registrationAlert: "MI400"
+      cherishAlert: "MI307"
+
+organisation:
+  agreementExpiry: "30" #IN DAYS
+
+ovl:
+  searchLimit: "10"
+
+midEnquiry:
+  cardDataCheck: "true"
+
+vm:
+  maxMsgQueue: "10"
+  claims:
+    maxMsgQueue: "1000"
+    noOfConsumers: "10"
+    timeout: "2" #IN-MINUTES
+  alerts:
+    maxMsgQueue: "1000"
+  ovl:
+    maxMsgQueue: "10000"
+    noOfConsumers: "100"
+  vrm:
+    maxMsgQueue: "1000"
+
+os:
+  maxEntries: "5000"
+  expirationInterval: "10" #IN-MINUTES
+  lookup:
+    ttl: "1440" #IN-MINUTES
+  user:
+    api:
+      maxEntries: "5000"
+      ttl: "1440" #IN-MINUTES
+    portal:
+      maxEntries: "5000"
+      ttl: "5" #IN-MINUTES
+
+scheduler: #IN-MINUTES
+  notify:
+    frequency: "15"
+    startDelay: "10"
+  org:
+    frequency: "30"
+    startDelay: "15"
+  users:
+    frequency: "10"
+    startDelay: "15"
+    cronExpression: "0 0 6 1/1 * ? *"
+    timeZone: "Europe/London"
+  alerts:
+    frequency: "60"
+    startDelay: "15"
+  content:
+    frequency: "60"
+    startDelay: "20"
+  batchNotify:
+    frequency: "2"
+    startDelay: "5"
+  vrm:
+    frequency: "60"
+    startDelay: "5"
+
+# HTTP LISTENER CONFIG
+#http:
+  #listener:
+    #host: "0.0.0.0"
+    #path: "/api/*"
+  #port: "8081"
+  #private:
+    #port: "8091"
+
+# HTTPS LISTENER CONFIG
+https:
+  listener:
+    host: "0.0.0.0"
+    path: "/api/*"
+  port: "8081"
+  #private:
+    #port: "8092"
+
+response:
+  timeout: "60000" # In Milleseconds
+lookup:
+  timeout: "30000" # In Milleseconds
+retry:
+  frequency: "2000" # In Milleseconds
+  count: "3"
+
+# HTTP REQUEST CONFIG
+systemapi:
+  utility:
+    basePath: "/api/v1"
+    path:
+      cases:
+        registration: "/servicenow/cases/registration"
+      servicenow:
+        tickets: "/servicenow/cases/support"
+      worldpay: "/worldpay/payments"
+      ukvehicledata:
+        postcodeLookup: "/ukvehicledata/addresses" #postcode
+        vrmLookup: "/ukvehicledata/vehicles/search?vrm=" #vrm
+        vinLookup: "/ukvehicledata/vehicles/search?vin=" #vin
+        tviCodeLookup: "/ukvehicledata/tvi" #tviCode
+      notifications:
+        email: "/notifications/email"
+      adls:
+        getDocumentByPath: "/adls/documents/file"
+      okta:
+        getUser: "/okta/users/{userId}"
+        createUser: "/okta/users"
+        addGroupToUser: "/okta/users/{userId}/navigategroup"
