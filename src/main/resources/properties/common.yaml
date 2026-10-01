@@ -238,3 +238,30 @@ systemapi:
         getUser: "/okta/users/{userId}"
         createUser: "/okta/users"
         addGroupToUser: "/okta/users/{userId}/navigategroup"
+
+# DATABASE CONFIG
+db:
+  driverClassName:
+    sqlserver: "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+  pool:
+    maxPoolSize: "30"
+    minPoolSize: "10"
+    acquireIncrement: "10"
+    loginTimeout: "30" #SECONDS
+    maxIdleTime: "10" #SECONDS
+    checkoutTimeout: "30" #SECONDS
+    queryTimeout: "15" #SECONDS
+    cancelQueryTimeout: "5" #SECONDS
+    lockTimeout: "5000" #MILLISECONDS
+    socketTimeout: "60000" #MILLISECONDS
+    preparedStatementCacheSize: "10" #STATEMENTS ARE CACHED PER POOLED CONNECTION
+    maxStatements: "50" #MAX STATEMENTS ARE CACHED PER DATASOURCE
+    unicodeString: "true"
+  query:
+    preferredTestQuery: "SELECT 1"
+    select:
+      # ------------- LOV & STATIC QUERIES -------------
+      # NOTE: the SQL query strings below this point are cut off at the right margin in every
+      # screenshot received so far and still need to be re-photographed at full width (or with
+      # word-wrap enabled) before they can be safely transcribed. Placeholder keys left out
+      # entirely rather than guessed - do not assume this list is complete.
